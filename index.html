@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asset Pulse - 個人資産管理アプリ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- サイドバー / ナビゲーション -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">💰</div>
+        <h2>AssetPulse</h2>
+      </div>
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-tab="dashboard">
+          <span class="icon">📊</span>
+          <span>資産ダッシュボード</span>
+        </button>
+        <button class="nav-btn" data-tab="input">
+          <span class="icon">📝</span>
+          <span>収支入力</span>
+        </button>
+        <button class="nav-btn" data-tab="settings">
+          <span class="icon">⚙️</span>
+          <span>マスタ設定</span>
+        </button>
+      </nav>
+      <div class="user-profile">
+        <div class="avatar">👤</div>
+        <div class="user-info">
+          <span class="user-name">ユーザー（マルチデバイス同期）</span>
+          <span class="sync-status">🟢 クラウド同期完了</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ領域 -->
+    <main class="main-content">
+
+      <!-- 1. 一覧画面 (ダッシュボード) -->
+      <section id="tab-dashboard" class="tab-content active">
+        <header class="page-header">
+          <h1>資産ダッシュボード</h1>
+          <p class="subtitle">毎週日曜日基準の集計と資産推移</p>
+        </header>
+
+        <!-- KPIカード -->
+        <div class="kpi-grid">
+          <div class="kpi-card total-asset">
+            <span class="kpi-label">現在の総資産額</span>
+            <div class="kpi-value" id="kpi-total-assets">¥0</div>
+            <span class="kpi-sub">過去すべてのプラス・マイナスの総計</span>
+          </div>
+          <div class="kpi-card weekly-inc">
+            <span class="kpi-label">今週の増額</span>
+            <div class="kpi-value" id="kpi-weekly-inc">+¥0</div>
+            <span class="kpi-sub">当週のプラス収入計</span>
+          </div>
+          <div class="kpi-card weekly-dec">
+            <span class="kpi-label">今週の減額</span>
+            <div class="kpi-value" id="kpi-weekly-dec">-¥0</div>
+            <span class="kpi-sub">当週のマイナス支出計</span>
+          </div>
+        </div>
+
+        <!-- 週次集計テーブル -->
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>週次 資産増減リスト (日曜日基準)</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>基準日 (日曜日)</th>
+                  <th>現在の資産額 (累計)</th>
+                  <th>1週間の増額</th>
+                  <th>1週間の減額</th>
+                  <th>純増減</th>
+                </tr>
+              </thead>
+              <tbody id="weekly-table-body">
+                <!-- JavaScriptで動的生成 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 直近トランザクション履歴 -->
+        <div class="card table-card">
+          <div class="card-header">
+            <h3>直近の明細履歴</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>日付</th>
+                  <th>種別</th>
+                  <th>内容 / カード名</th>
+                  <th>金額</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="recent-transactions-body">
+                <!-- JavaScriptで動的生成 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. 入力画面 -->
+      <section id="tab-input" class="tab-content">
+        <header class="page-header">
+          <h1>日々の収支入力</h1>
+          <p class="subtitle">現金支出・収入、クレジットカードの利用を記録</p>
+        </header>
+
+        <div class="card form-card">
+          <form id="transaction-form">
+            <div class="form-group">
+              <label>決済手段・支払い方法の選択</label>
+              <div class="payment-panel-grid" id="payment-panel-grid">
+                <!-- JavaScriptで「現金」および登録カードパネルを動的生成 -->
+              </div>
+            </div>
+
+            <!-- 現金選択時のフィールド -->
+            <div id="cash-fields" class="form-section">
+              <div class="form-group">
+                <label for="cash-date">支払 (入金) 日</label>
+                <input type="date" id="cash-date" class="form-control">
+              </div>
+            </div>
+
+            <!-- クレジットカード選択時のフィールド -->
+            <div id="card-fields" class="form-section hidden">
+              <div class="form-group">
+                <label for="card-month">引き落とし月</label>
+                <input type="month" id="card-month" class="form-control">
+                <small class="help-text" id="card-withdrawal-hint">※カードマスタの引き落とし日と自動結合されます</small>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="amount">金額 (円)</label>
+              <div class="amount-input-wrapper">
+                <select id="amount-sign" class="sign-select">
+                  <option value="-">- (支出)</option>
+                  <option value="+">+ (収入)</option>
+                </select>
+                <input type="number" id="amount" class="form-control" placeholder="1000" min="1" step="1" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="description">摘要・メモ</label>
+              <input type="text" id="description" class="form-control" placeholder="例: スーパーで買い物、ランチなど">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">記録を保存する</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- 明細編集ダイアログ (モーダル) -->
+      <dialog id="edit-tx-modal" class="card" style="margin: auto; max-width: 500px; padding: 2rem; border-radius: 14px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main);">
+        <h3 style="margin-bottom: 1rem;">✏️ 明細データの修正</h3>
+        <form id="edit-tx-form">
+          <input type="hidden" id="edit-tx-id">
+          <div class="form-group">
+            <label for="edit-tx-date">日付</label>
+            <input type="date" id="edit-tx-date" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-tx-amount">金額 (収入はプラス/支出はマイナス)</label>
+            <input type="number" id="edit-tx-amount" class="form-control" step="1" required>
+            <small class="help-text">例: 支出は -5000、収入は 50000</small>
+          </div>
+          <div class="form-group">
+            <label for="edit-tx-desc">内容・メモ</label>
+            <input type="text" id="edit-tx-desc" class="form-control" placeholder="メモを入力">
+          </div>
+          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary" style="flex: 1;">修正を保存</button>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('edit-tx-modal').close()">キャンセル</button>
+          </div>
+        </form>
+      </dialog>
+
+      <!-- 3. 管理画面 (マスタ設定) -->
+      <section id="tab-settings" class="tab-content">
+        <header class="page-header">
+          <h1>マスタ設定 & 自動計上ルール</h1>
+          <p class="subtitle">クレジットカード、給与、交通費の自動生成設定</p>
+        </header>
+
+        <div class="grid-2col">
+          <!-- クレジットカード設定 -->
+          <div class="card">
+            <div class="card-header">
+              <h3>💳 クレジットカード設定</h3>
+            </div>
+            <form id="card-master-form">
+              <div class="form-group">
+                <label for="master-card-name">カード名称</label>
+                <input type="text" id="master-card-name" class="form-control" placeholder="例: 楽天カード" required>
+              </div>
+              <div class="form-group">
+                <label for="master-card-company">カード会社</label>
+                <input type="text" id="master-card-company" class="form-control" placeholder="例: VISA, JCB">
+              </div>
+              <div class="form-group">
+                <label for="master-card-day">毎月の引き落とし日</label>
+                <input type="number" id="master-card-day" class="form-control" min="1" max="31" placeholder="27" required>
+                <small class="help-text">※月によって存在しない日付(例:31日)の場合、末日に自動調整されます</small>
+              </div>
+              <button type="submit" class="btn btn-secondary">カードを追加</button>
+            </form>
+
+            <hr class="divider">
+
+            <h4>登録済みカード一覧</h4>
+            <ul id="card-list" class="master-list">
+              <!-- JavaScriptで追加 -->
+            </ul>
+          </div>
+
+          <!-- 給与・交通費自動計上設定 -->
+          <div class="card">
+            <div class="card-header">
+              <h3>💼 収入自動設定 (給与・交通費)</h3>
+            </div>
+            
+            <form id="salary-setting-form">
+              <h4>1. 給与設定</h4>
+              <div class="form-group">
+                <label for="salary-amount">毎月の基本給与額 (円)</label>
+                <input type="number" id="salary-amount" class="form-control" placeholder="300000" value="300000">
+              </div>
+              <div class="form-group">
+                <label for="salary-day">振込指定日 (1〜31日)</label>
+                <input type="number" id="salary-day" class="form-control" min="1" max="31" value="25">
+              </div>
+              <div class="form-group">
+                <label>振込日が「土日祝」の場合の補正</label>
+                <div class="radio-group">
+                  <label class="radio-label">
+                    <input type="radio" name="weekend_adj" value="PREVIOUS_WORKDAY" checked> 直前の平日に前倒し
+                  </label>
+                  <label class="radio-label">
+                    <input type="radio" name="weekend_adj" value="NEXT_WORKDAY"> 直後の平日に後倒し
+                  </label>
+                </div>
+              </div>
+
+              <hr class="divider">
+
+              <h4>2. 交通費設定</h4>
+              <div class="form-group">
+                <label for="transport-amount">交通費支給額 (円)</label>
+                <input type="number" id="transport-amount" class="form-control" placeholder="15000" value="15000">
+              </div>
+              <div class="form-group">
+                <label>支給される月 (複数選択可)</label>
+                <div class="checkbox-grid" id="transport-months-grid">
+                  <!-- 1月〜12月のチェックボックスを動的生成 -->
+                </div>
+                <small class="help-text">※支給日は上記「給与振込日（土日祝補正後）」と同日になります</small>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block">収入自動計上設定を保存 & スケジュール適用</button>
+            </form>
+
+            <hr class="divider">
+
+            <!-- 移行用 初期総資産設定 -->
+            <form id="initial-balance-form">
+              <h4>3. 移行時 初期総資産設定</h4>
+              <div class="form-group">
+                <label for="initial-balance-amount">アプリ開始時点（移行時）の総資産額 (円)</label>
+                <input type="number" id="initial-balance-amount" class="form-control" placeholder="1000000" required>
+                <small class="help-text">※過去の資産からの引き継ぎ用初期残高を設定します</small>
+              </div>
+              <div class="form-group">
+                <label for="initial-balance-date">起算日 (初期残高の基準日)</label>
+                <input type="date" id="initial-balance-date" class="form-control" required>
+              </div>
+              <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
