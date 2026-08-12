@@ -11,35 +11,6 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- サイドバー / ナビゲーション -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo-icon">💰</div>
-        <h2>AssetPulse</h2>
-      </div>
-      <nav class="nav-menu">
-        <button class="nav-btn active" data-tab="dashboard">
-          <span class="icon">📊</span>
-          <span>資産ダッシュボード</span>
-        </button>
-        <button class="nav-btn" data-tab="input">
-          <span class="icon">📝</span>
-          <span>収支入力</span>
-        </button>
-        <button class="nav-btn" data-tab="settings">
-          <span class="icon">⚙️</span>
-          <span>マスタ設定</span>
-        </button>
-      </nav>
-      <div class="user-profile">
-        <div class="avatar">👤</div>
-        <div class="user-info">
-          <span class="user-name">ユーザー（マルチデバイス同期）</span>
-          <span class="sync-status">🟢 クラウド同期完了</span>
-        </div>
-      </div>
-    </aside>
-
     <!-- メインコンテンツ領域 -->
     <main class="main-content">
 
@@ -301,6 +272,22 @@
 
     </main>
   </div>
+
+  <!-- 画面下部固定 ボトムナビゲーションバー -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="dashboard">
+      <span class="icon">📊</span>
+      <span>資産ダッシュボード</span>
+    </button>
+    <button class="nav-btn" data-tab="input">
+      <span class="icon">📝</span>
+      <span>収支入力</span>
+    </button>
+    <button class="nav-btn" data-tab="settings">
+      <span class="icon">⚙️</span>
+      <span>マスタ設定</span>
+    </button>
+  </nav>
 
   <script src="app.js"></script>
 </body>
