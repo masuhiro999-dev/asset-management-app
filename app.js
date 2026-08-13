@@ -851,6 +851,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      // 古いキャッシュ文字列をクリアして新しい値をセット
+      localStorage.removeItem("asset_fb_config");
       localStorage.setItem("asset_fb_sync_key", syncKey);
       localStorage.setItem("asset_fb_config", configJson);
       
