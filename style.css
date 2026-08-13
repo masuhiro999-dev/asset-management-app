@@ -214,43 +214,68 @@ body {
 
 .table-responsive {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
+  white-space: nowrap; /* 1行1件・折り返し防止 */
 }
 
 .data-table th, .data-table td {
-  padding: 1rem;
+  padding: 0.65rem 0.4rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .data-table th {
   color: var(--text-muted);
-  font-weight: 500;
-  background: rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.78rem;
 }
 
-.data-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+/* スマホ最適化: 1行化のための列幅とフォント調整 */
+.weekly-table th, .weekly-table td,
+.history-table th, .history-table td {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
 }
 
-/* 直接クリックで編集可能な資産額セル */
 .editable-asset-cell {
   cursor: pointer;
-  padding: 0.2rem 0.4rem;
+  padding: 0.15rem 0.3rem;
   border-radius: 4px;
   border-bottom: 1px dashed rgba(255, 255, 255, 0.4);
   transition: all 0.2s ease;
 }
 
-.editable-asset-cell:hover {
-  background: rgba(99, 102, 241, 0.25);
+/* --- トースト通知 (二重登録防止・登録フィードバック) --- */
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: rgba(16, 185, 129, 0.95);
   color: #ffffff;
-  border-bottom-color: var(--accent-primary);
+  padding: 0.75rem 1.5rem;
+  border-radius: 30px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  z-index: 2000;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.toast-notification.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* 決済手段パネルグリッド (コンパクト仕様) */

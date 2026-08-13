@@ -43,17 +43,17 @@
         <!-- 週次集計テーブル -->
         <div class="card table-card">
           <div class="card-header">
-            <h3>週次 資産増減リスト (日曜日基準)</h3>
+            <h3>週次 資産増減リスト</h3>
           </div>
           <div class="table-responsive">
-            <table class="data-table">
+            <table class="data-table weekly-table">
               <thead>
                 <tr>
-                  <th>基準日 (日曜日)</th>
-                  <th>現在の資産額 (累計)</th>
-                  <th>1週間の増額</th>
-                  <th>1週間の減額</th>
-                  <th>純増減</th>
+                  <th style="white-space: nowrap;">基準日</th>
+                  <th style="white-space: nowrap;">現在の資産額</th>
+                  <th style="white-space: nowrap;">純増減</th>
+                  <th style="white-space: nowrap;">増額</th>
+                  <th style="white-space: nowrap;">減額</th>
                 </tr>
               </thead>
               <tbody id="weekly-table-body">
@@ -69,14 +69,14 @@
             <h3>直近の明細履歴</h3>
           </div>
           <div class="table-responsive">
-            <table class="data-table">
+            <table class="data-table history-table">
               <thead>
                 <tr>
-                  <th>日付</th>
-                  <th>種別</th>
+                  <th style="white-space: nowrap;">日付</th>
+                  <th style="white-space: nowrap;">金額</th>
+                  <th style="white-space: nowrap;">種別</th>
                   <th>内容 / カード名</th>
-                  <th>金額</th>
-                  <th>操作</th>
+                  <th style="white-space: nowrap;">操作</th>
                 </tr>
               </thead>
               <tbody id="recent-transactions-body">

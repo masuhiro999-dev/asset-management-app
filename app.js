@@ -1,39 +1,26 @@
 /**
- * AssetPulse - 資産管理アプリケーション コアロジック
+ * AssetPulse - 資産管理アプリケーション コアロジック (スマホ縦画面最適化 & 複数端末同期対応)
  */
 
-// 日本の祝日データ（2026年の主な祝日データモデル）
+// 日本の祝日データ（2026年）
 const JAPANESE_HOLIDAYS = [
-  "2026-01-01", // 元日
-  "2026-01-12", // 成人の日
-  "2026-02-11", // 建国記念の日
-  "2026-02-23", // 天皇誕生日
-  "2026-03-20", // 春分の日
-  "2026-04-29", // 昭和の日
-  "2026-05-03", // 憲法記念日
-  "2026-05-04", // みどもの日
-  "2026-05-05", // こどもの日
-  "2026-05-06", // 振替休日
-  "2026-07-20", // 海の日
-  "2026-08-11", // 山の日
-  "2026-09-21", // 敬老の日
-  "2026-09-22", // 国民の休日
-  "2026-09-23", // 秋分の日
-  "2026-10-12", // スポーツの日
-  "2026-11-03", // 文化の日
-  "2026-11-23", // 勤労感謝の日
+  "2026-01-01", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
+  "2026-04-29", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06",
+  "2026-07-20", "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23",
+  "2026-10-12", "2026-11-03", "2026-11-23"
 ];
 
-// 初期サンプルデータ (ローカルストレージが空の場合に使用)
+// 初期サンプルデータ
 const DEFAULT_CARD_MASTERS = [
   { id: "card_1", name: "楽天カード", company: "VISA", withdrawal_day: 27 },
-  { id: "card_2", name: "三井住友カード", company: "Mastercard", withdrawal_day: 10 }
+  { id: "card_2", name: "三井住友カード", company: "Mastercard", withdrawal_day: 10 },
+  { id: "card_3", name: "J-WEST", company: "VISA", withdrawal_day: 10 }
 ];
 
 const DEFAULT_INCOME_SETTINGS = {
   salary_amount: 50000,
   salary_day: 25,
-  weekend_adj: "PREVIOUS_WORKDAY", // PREVIOUS_WORKDAY or NEXT_WORKDAY
+  weekend_adj: "PREVIOUS_WORKDAY",
   transport_amount: 0,
   transport_months: [4, 10]
 };
@@ -47,7 +34,6 @@ let rawTransactions = JSON.parse(localStorage.getItem("asset_transactions")) || 
 
 // クレンジング: 古いストレージ内の誤った給与・交通費マイナスデータを完全除去・正数化
 rawTransactions = rawTransactions.filter(t => {
-  // 過去にマイナスで保存された SALARY トランザクションがあれば一旦除外（syncIncomeSchedule で正しく再生成される）
   if ((t.type === 'SALARY' || (t.description && t.description.includes('給与'))) && t.amount < 0) {
     return false;
   }
@@ -65,7 +51,7 @@ let state = {
   transactions: rawTransactions
 };
 
-// データの永続化 (ユーザーが明示的に変更・保存したときのみ更新・永続保持される)
+// データの永続化と他端末同期フック
 function saveData() {
   localStorage.setItem("asset_cards", JSON.stringify(state.cards));
   localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
@@ -73,9 +59,25 @@ function saveData() {
   renderAll();
 }
 
-// --- 計算ロジック 1: 土日祝判定 ---
+// トースト通知機能 (二重登録防止 & 明確な視覚的フィードバック)
+function showToast(message) {
+  let toast = document.getElementById("global-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "global-toast";
+    toast.className = "toast-notification";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 2500);
+}
+
+// 土日祝判定
 function isHolidayOrWeekend(date) {
-  const dayOfWeek = date.getDay(); // 0: 日曜, 6: 土曜
+  const dayOfWeek = date.getDay();
   if (dayOfWeek === 0 || dayOfWeek === 6) return true;
   
   const yyyy = date.getFullYear();
@@ -86,21 +88,18 @@ function isHolidayOrWeekend(date) {
   return JAPANESE_HOLIDAYS.includes(dateStr);
 }
 
-// --- 計算ロジック 2: 給与・交通費の土日祝前倒し/後倒し補正アルゴリズム ---
+// 給与・交通費の土日祝前倒し/後倒し補正
 function calculateAdjustedPaymentDate(year, month, targetDay, adjType) {
-  // 月の最終日判定 (例: 2月31日指定の場合は28/29日に調整)
   const maxDay = new Date(year, month, 0).getDate();
   const actualDay = Math.min(targetDay, maxDay);
   
   let currDate = new Date(year, month - 1, actualDay);
   
   if (adjType === 'PREVIOUS_WORKDAY') {
-    // 土日祝の間、前日へ戻る
     while (isHolidayOrWeekend(currDate)) {
       currDate.setDate(currDate.getDate() - 1);
     }
   } else if (adjType === 'NEXT_WORKDAY') {
-    // 土日祝の間、翌日へ進む
     while (isHolidayOrWeekend(currDate)) {
       currDate.setDate(currDate.getDate() + 1);
     }
@@ -112,13 +111,12 @@ function calculateAdjustedPaymentDate(year, month, targetDay, adjType) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// --- 計算ロジック 3: クレジットカード引き落とし日の結合・日付生成 ---
+// クレジットカード引き落とし日結合
 function generateCreditCardWithdrawalDate(yearMonthStr, withdrawalDay) {
   const [yearStr, monthStr] = yearMonthStr.split('-');
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10);
   
-  // 選択月の末日を取得
   const maxDay = new Date(year, month, 0).getDate();
   const targetDay = Math.min(withdrawalDay, maxDay);
   
@@ -126,7 +124,7 @@ function generateCreditCardWithdrawalDate(yearMonthStr, withdrawalDay) {
   return `${yearStr}-${monthStr}-${dd}`;
 }
 
-// --- 計算ロジック 4: 自動給与・交通費・毎週3000円自動マイナス バッチ生成 ---
+// 自動給与・交通費・毎週3000円自動マイナス バッチ生成
 function syncIncomeSchedule() {
   const { salary_amount, salary_day, weekend_adj, transport_amount, transport_months } = state.incomeSettings;
   
@@ -134,18 +132,14 @@ function syncIncomeSchedule() {
   const START_DATE = `${currentYear}-08-03`;
   const START_MONTH = 8;
   
-  // 自動生成系の既存トランザクションを除外して最新ルールで再構成
   state.transactions = state.transactions.filter(t => 
     t.type !== 'SALARY' && 
     t.type !== 'TRANSPORTATION' && 
     !t.id.startsWith('weekly_auto_minus_')
   );
   
-  // 8月3日スタートのため、8月から12月までの給料・交通費を生成
   for (let m = START_MONTH; m <= 12; m++) {
-    // 1. 給与の補正日付計算
     const salaryDateStr = calculateAdjustedPaymentDate(currentYear, m, salary_day, weekend_adj);
-    
     const validSalaryAmount = Math.abs(parseFloat(salary_amount || 50000));
     
     if (salaryDateStr >= START_DATE) {
@@ -153,13 +147,12 @@ function syncIncomeSchedule() {
         id: `sal_${currentYear}_${m}`,
         date: salaryDateStr,
         type: 'SALARY',
-        amount: validSalaryAmount, // 確実にプラス（収入）
+        amount: validSalaryAmount,
         card_id: null,
-        description: `${m}月 給与振込 (+¥${validSalaryAmount.toLocaleString()})`
+        description: `${m}月 給与振込`
       });
     }
     
-    // 2. 交通費支給月の判定
     const validTransportAmount = Math.abs(parseFloat(transport_amount || 0));
     if (transport_months && transport_months.includes(m) && validTransportAmount > 0) {
       if (salaryDateStr >= START_DATE) {
@@ -167,15 +160,15 @@ function syncIncomeSchedule() {
           id: `trans_${currentYear}_${m}`,
           date: salaryDateStr,
           type: 'TRANSPORTATION',
-          amount: validTransportAmount, // 確実にプラス（収入）
+          amount: validTransportAmount,
           card_id: null,
-          description: `${m}月 交通費支給 (+¥${validTransportAmount.toLocaleString()})`
+          description: `${m}月 交通費支給`
         });
       }
     }
   }
 
-  // 3. 毎週3,000円の自動マイナス（毎週の日曜日に3,000円の固定支出を自動計上）
+  // 毎週3,000円の自動マイナス
   const startDateObj = new Date("2026-08-03");
   const endDateObj = new Date(currentYear, 11, 31);
   let curr = new Date(startDateObj);
@@ -203,22 +196,19 @@ function syncIncomeSchedule() {
   }
 }
 
-// --- 計算ロジック 5: 日曜日基準の週次ダッシュボード集計 ---
+// 週次ダッシュボード集計エンジン
 function calculateWeeklyDashboard() {
-  // トランザクションを日付順にソート (古い順)
   const sortedTxs = [...state.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
   
-  // 過去〜未来の毎週日曜日のリストを生成（直近8週間分）
   const sundays = [];
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   
-  // 今週の日曜日を取得
   const currentSunday = new Date(today);
   const diffToSunday = (7 - today.getDay()) % 7;
   currentSunday.setDate(today.getDate() + diffToSunday);
   
-  // 直最近の日曜日 (i = 0) から未来13週 (約3ヶ月先) の日曜日を昇順で生成
+  // 直近の日曜日 (i = 0) から未来13週 (約3ヶ月先) の日曜日を昇順で生成
   for (let i = 0; i <= 13; i++) {
     const sun = new Date(currentSunday);
     sun.setDate(currentSunday.getDate() + (i * 7));
@@ -229,21 +219,16 @@ function calculateWeeklyDashboard() {
     sundays.push(`${yyyy}-${mm}-${dd}`);
   }
   
-  // 古い日曜日から順番に集計し、増減額が資産額へ正しく累積連動するように計算
   const weeklyData = sundays.map(sundayStr => {
     const sundayDate = new Date(sundayStr);
-    
-    // 直前の月曜日 (日曜日の6日前)
     const mondayDate = new Date(sundayDate);
     mondayDate.setDate(sundayDate.getDate() - 6);
     const mondayStr = mondayDate.toISOString().split('T')[0];
     
-    // 1. 該当週 (月曜〜日曜) の増額 (プラス合計: 給与・交通費・プラス取引)
     const weeklyIncrease = sortedTxs
       .filter(t => t.date >= mondayStr && t.date <= sundayStr && t.amount > 0 && t.type !== 'CREDIT_CARD')
       .reduce((sum, t) => sum + t.amount, 0);
       
-    // 2. 該当週 (月曜〜日曜) の減額 (マイナス絶対値合計: 給与や交通費は型および摘要で100%遮断・除外)
     const weeklyDecrease = sortedTxs
       .filter(t => 
         t.date >= mondayStr && 
@@ -256,10 +241,8 @@ function calculateWeeklyDashboard() {
       )
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
       
-    // 3. 該当週の純増減額
     const netChange = weeklyIncrease - weeklyDecrease;
 
-    // 4. 該当週の日曜日時点での累計資産額 (その日曜日 23:59 時点までに確定・予定されている全取引的累積)
     const totalAssets = sortedTxs
       .filter(t => t.date <= sundayStr)
       .reduce((sum, t) => sum + t.amount, 0);
@@ -277,174 +260,7 @@ function calculateWeeklyDashboard() {
   return weeklyData;
 }
 
-// --- UIレンダリング ---
-function renderAll() {
-  renderDashboard();
-  renderPaymentPanels();
-  renderMasterSettings();
-  renderRecentTransactions();
-}
-
-// 明細編集モーダルを開く
-function openEditTxModal(id) {
-  const tx = state.transactions.find(t => t.id === id);
-  if (!tx) return;
-  
-  document.getElementById("edit-tx-id").value = tx.id;
-  document.getElementById("edit-tx-date").value = tx.date;
-  document.getElementById("edit-tx-amount").value = tx.amount;
-  document.getElementById("edit-tx-desc").value = tx.description || "";
-  
-  const modal = document.getElementById("edit-tx-modal");
-  if (modal) modal.showModal();
-}
-
-function renderDashboard() {
-  const weeklyData = calculateWeeklyDashboard();
-  const tbody = document.getElementById("weekly-table-body");
-  tbody.innerHTML = "";
-  
-  // 当日（本日）の日付文字列 (YYYY-MM-DD)
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-
-  // 今週の月曜日と日曜日を算出
-  const currentSunday = new Date(today);
-  const diffToSunday = (7 - today.getDay()) % 7;
-  currentSunday.setDate(today.getDate() + diffToSunday);
-  
-  const currentMonday = new Date(currentSunday);
-  currentMonday.setDate(currentSunday.getDate() - 6);
-  
-  const monMm = currentMonday.getMonth() + 1;
-  const monDd = currentMonday.getDate();
-  const sunMm = currentSunday.getMonth() + 1;
-  const sunDd = currentSunday.getDate();
-  
-  const thisWeekDateRangeStr = `${monMm}/${monDd}(月)〜${sunMm}/${sunDd}(日)`;
-
-  // 【当日現在の総資産額】
-  const currentTotal = state.transactions
-    .filter(t => t.date <= todayStr)
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  document.getElementById("kpi-total-assets").textContent = `¥${currentTotal.toLocaleString()}`;
-  
-  // 今週の増減データ（今週の日曜日キーに該当するもの）
-  const thisSundayStr = currentSunday.toISOString().split('T')[0];
-  const thisWeekData = weeklyData.find(w => w.sundayStr === thisSundayStr) || { weeklyIncrease: 0, weeklyDecrease: 0 };
-
-  document.getElementById("kpi-weekly-inc").textContent = `+¥${thisWeekData.weeklyIncrease.toLocaleString()}`;
-  document.getElementById("kpi-weekly-dec").textContent = `-¥${thisWeekData.weeklyDecrease.toLocaleString()}`;
-  
-  // 対象日テキストの更新
-  const incSubEl = document.querySelector(".kpi-card.weekly-inc .kpi-sub");
-  const decSubEl = document.querySelector(".kpi-card.weekly-dec .kpi-sub");
-  if (incSubEl) incSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の収入計`;
-  if (decSubEl) decSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の支出計`;
-
-  weeklyData.forEach(row => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><strong>${row.sundayStr}</strong> <span class="help-text">(${row.mondayStr}〜)</span></td>
-      <td>
-        <strong class="editable-asset-cell" onclick="editWeeklyAssetAmount('${row.sundayStr}', ${row.totalAssets})" title="クリックして資産額を直接手動変更">
-          ¥${row.totalAssets.toLocaleString()}
-        </strong>
-      </td>
-      <td style="color: var(--accent-income)">+¥${row.weeklyIncrease.toLocaleString()}</td>
-      <td style="color: var(--accent-expense)">-¥${row.weeklyDecrease.toLocaleString()}</td>
-      <td style="color: ${row.netChange >= 0 ? 'var(--accent-income)' : 'var(--accent-expense)'}">
-        ${row.netChange >= 0 ? '+' : ''}¥${row.netChange.toLocaleString()}
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-// 特定の日曜日時点での「現在の資産額 (累計)」を手動で変更・上書きする関数
-function editWeeklyAssetAmount(sundayDateStr, currentAssetsVal) {
-  const inputVal = prompt(`【${sundayDateStr} (日)】時点の「現在の資産額 (累計)」を入力してください:`, currentAssetsVal);
-  if (inputVal !== null && inputVal.trim() !== "") {
-    const newAmount = parseFloat(inputVal);
-    if (!isNaN(newAmount)) {
-      const diff = newAmount - currentAssetsVal;
-      if (diff !== 0) {
-        state.transactions.push({
-          id: `manual_adj_${sundayDateStr}_${Date.now()}`,
-          date: sundayDateStr,
-          type: 'CASH',
-          amount: diff,
-          card_id: null,
-          description: `資産額手動調整 (${sundayDateStr}時点: ¥${newAmount.toLocaleString()})`
-        });
-        saveData();
-        alert(`${sundayDateStr}時点の資産額を ¥${newAmount.toLocaleString()} に修正・更新しました！`);
-      }
-    } else {
-      alert("有効な数字を入力してください。");
-    }
-  }
-}
-
-function renderRecentTransactions() {
-  const tbody = document.getElementById("recent-transactions-body");
-  tbody.innerHTML = "";
-  
-  // 今日の日付および直近3ヶ月前の日付を算出
-  const today = new Date();
-  const threeMonthsAgo = new Date(today);
-  threeMonthsAgo.setMonth(today.getMonth() - 3);
-  
-  const threeMonthsAgoStr = threeMonthsAgo.toISOString().split('T')[0];
-  
-  // 直近3ヶ月以内の明細に絞り込み、日付の昇順 (古い順 -> 新しい順) でソート
-  const recentTxs = state.transactions
-    .filter(tx => tx.date >= threeMonthsAgoStr)
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-  
-  recentTxs.forEach(tx => {
-    const tr = document.createElement("tr");
-    
-    let typeBadge = "💵 現金";
-    if (tx.type === "CREDIT_CARD") typeBadge = "💳 クレジット";
-    if (tx.type === "SALARY") typeBadge = "💼 給与";
-    if (tx.type === "TRANSPORTATION") typeBadge = "🚌 交通費";
-
-    let displayDesc = tx.description;
-    if (tx.card_id) {
-      const card = state.cards.find(c => c.id === tx.card_id);
-      if (card) {
-        const companyStr = card.company ? ` (${card.company})` : '';
-        displayDesc = `${card.name}${companyStr}`;
-        if (tx.description && !tx.description.includes('利用') && !tx.description.includes('引落')) {
-          displayDesc += ` - ${tx.description}`;
-        }
-      }
-    }
-    
-    tr.innerHTML = `
-      <td><strong>${tx.date}</strong></td>
-      <td>${typeBadge}</td>
-      <td>${displayDesc || '-'}</td>
-      <td style="font-weight: 600; color: ${tx.amount >= 0 ? 'var(--accent-income)' : 'var(--accent-expense)'}">
-        ${tx.amount >= 0 ? '+' : ''}¥${tx.amount.toLocaleString()}
-      </td>
-      <td>
-        <button class="btn-action-sm" style="margin-right: 0.3rem;" onclick="openEditTxModal('${tx.id}')">✏️ 修正</button>
-        <button class="btn-danger-sm" onclick="deleteTransaction('${tx.id}')">🗑️ 削除</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function deleteTransaction(id) {
-  state.transactions = state.transactions.filter(t => t.id !== id);
-  saveData();
-}
-
-// 現在選択されている決済パネルの状態 ({ type: 'CASH' } または { type: 'CREDIT_CARD', cardId: '...' })
+// 決済パネル状態
 let selectedPaymentMethod = { type: 'CASH' };
 
 function renderPaymentPanels() {
@@ -453,7 +269,6 @@ function renderPaymentPanels() {
   
   container.innerHTML = "";
   
-  // 1. 現金パネル
   const cashItem = document.createElement("div");
   cashItem.className = `payment-panel-item ${selectedPaymentMethod.type === 'CASH' ? 'active' : ''}`;
   cashItem.onclick = () => selectPaymentPanel({ type: 'CASH' });
@@ -464,7 +279,6 @@ function renderPaymentPanels() {
   `;
   container.appendChild(cashItem);
   
-  // 2. マスタ登録カードパネル一覧
   state.cards.forEach(card => {
     const isSelected = selectedPaymentMethod.type === 'CREDIT_CARD' && selectedPaymentMethod.cardId === card.id;
     const item = document.createElement("div");
@@ -497,69 +311,235 @@ function selectPaymentPanel(method) {
   }
 }
 
+// 全レンダリング実行
 function renderAll() {
   renderDashboard();
   renderPaymentPanels();
   renderMasterSettings();
   renderRecentTransactions();
-  renderHistoryTab();
+}
+
+// 1. ダッシュボード レンダリング (スマホ縦画面高一覧性版)
+function renderDashboard() {
+  const weeklyData = calculateWeeklyDashboard();
+  const tbody = document.getElementById("weekly-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const currentSunday = new Date(today);
+  const diffToSunday = (7 - today.getDay()) % 7;
+  currentSunday.setDate(today.getDate() + diffToSunday);
+  
+  const currentMonday = new Date(currentSunday);
+  currentMonday.setDate(currentSunday.getDate() - 6);
+  
+  const monMm = currentMonday.getMonth() + 1;
+  const monDd = currentMonday.getDate();
+  const sunMm = currentSunday.getMonth() + 1;
+  const sunDd = currentSunday.getDate();
+  
+  const thisWeekDateRangeStr = `${monMm}/${monDd}(月)〜${sunMm}/${sunDd}(日)`;
+
+  const currentTotal = state.transactions
+    .filter(t => t.date <= todayStr)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  document.getElementById("kpi-total-assets").textContent = `¥${currentTotal.toLocaleString()}`;
+  
+  const thisSundayStr = currentSunday.toISOString().split('T')[0];
+  const thisWeekData = weeklyData.find(w => w.sundayStr === thisSundayStr) || { weeklyIncrease: 0, weeklyDecrease: 0 };
+
+  document.getElementById("kpi-weekly-inc").textContent = `+¥${thisWeekData.weeklyIncrease.toLocaleString()}`;
+  document.getElementById("kpi-weekly-dec").textContent = `-¥${thisWeekData.weeklyDecrease.toLocaleString()}`;
+  
+  const incSubEl = document.querySelector(".kpi-card.weekly-inc .kpi-sub");
+  const decSubEl = document.querySelector(".kpi-card.weekly-dec .kpi-sub");
+  if (incSubEl) incSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の収入計`;
+  if (decSubEl) decSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の支出計`;
+
+  // 週次 資産増減リストのレンダリング (スマホ縦画面最適化)
+  // 要件: 1行で表示、年の表示不要(08/16)、基準日の開始日不要、並び順: 基準日 -> 現在の資産額 -> 純増減 -> 増額 -> 減額、¥マークは現在の資産額のみ
+  weeklyData.forEach(row => {
+    const tr = document.createElement("tr");
+    const shortSunday = row.sundayStr.substring(5).replace('-', '/'); // "08/16" 形式
+    
+    // 数値の整形 (¥マークは資産額のみ)
+    const netSign = row.netChange >= 0 ? '+' : '';
+    const netFormatted = `${netSign}${row.netChange.toLocaleString()}`;
+    const incFormatted = row.weeklyIncrease > 0 ? `${row.weeklyIncrease.toLocaleString()}` : '0';
+    const decFormatted = row.weeklyDecrease > 0 ? `${row.weeklyDecrease.toLocaleString()}` : '0';
+
+    tr.innerHTML = `
+      <td><strong>${shortSunday}</strong></td>
+      <td>
+        <strong class="editable-asset-cell" onclick="editWeeklyAssetAmount('${row.sundayStr}', ${row.totalAssets})" title="クリックして資産額を直接手動変更">
+          ¥${row.totalAssets.toLocaleString()}
+        </strong>
+      </td>
+      <td style="color: ${row.netChange >= 0 ? 'var(--accent-income)' : 'var(--accent-expense)'}; font-weight: 600;">${netFormatted}</td>
+      <td style="color: var(--accent-income)">${incFormatted}</td>
+      <td style="color: var(--accent-expense)">${decFormatted}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// 2. 直近の明細履歴 レンダリング (スマホ縦画面高一覧性版)
+// 要件: 1件1行で表示、年表示不要(08/12)、種別はアイコンのみ(💵,💳,💼,🚌)、並び順: 日付 -> 金額 -> 種別 -> 内容/カード名 -> 操作、昇順(古い->新しい)
+function renderRecentTransactions() {
+  const tbody = document.getElementById("recent-transactions-body");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+  
+  const today = new Date();
+  const threeMonthsAgo = new Date(today);
+  threeMonthsAgo.setMonth(today.getMonth() - 3);
+  const threeMonthsAgoStr = threeMonthsAgo.toISOString().split('T')[0];
+  
+  const recentTxs = state.transactions
+    .filter(tx => tx.date >= threeMonthsAgoStr)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  
+  recentTxs.forEach(tx => {
+    const tr = document.createElement("tr");
+    const shortDate = tx.date.substring(5).replace('-', '/'); // "08/12" 形式
+    
+    // 種別はアイコンのみ表示
+    let typeIcon = "💵";
+    if (tx.type === "CREDIT_CARD") typeIcon = "💳";
+    if (tx.type === "SALARY") typeIcon = "💼";
+    if (tx.type === "TRANSPORTATION") typeIcon = "🚌";
+
+    let displayDesc = tx.description;
+    if (tx.card_id) {
+      const card = state.cards.find(c => c.id === tx.card_id);
+      if (card) {
+        const companyStr = card.company ? ` (${card.company})` : '';
+        displayDesc = `${card.name}${companyStr}`;
+        if (tx.description && !tx.description.includes('利用') && !tx.description.includes('引落')) {
+          displayDesc += ` - ${tx.description}`;
+        }
+      }
+    }
+    
+    // 並び順: 日付 -> 金額 -> 種別 -> 内容/カード名 -> 操作
+    tr.innerHTML = `
+      <td><strong>${shortDate}</strong></td>
+      <td style="font-weight: 600; color: ${tx.amount >= 0 ? 'var(--accent-income)' : 'var(--accent-expense)'}">
+        ${tx.amount >= 0 ? '+' : ''}¥${tx.amount.toLocaleString()}
+      </td>
+      <td style="text-align: center; font-size: 1.1rem;">${typeIcon}</td>
+      <td style="max-width: 130px; overflow: hidden; text-overflow: ellipsis;">${displayDesc || '-'}</td>
+      <td>
+        <button class="btn-action-sm" style="margin-right: 0.2rem;" onclick="openEditTxModal('${tx.id}')">✏️</button>
+        <button class="btn-danger-sm" onclick="deleteTransaction('${tx.id}')">🗑️</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// 資産額の手動書き換え
+function editWeeklyAssetAmount(sundayDateStr, currentAssetsVal) {
+  const inputVal = prompt(`【${sundayDateStr} (日)】時点の「現在の資産額」を入力してください:`, currentAssetsVal);
+  if (inputVal !== null && inputVal.trim() !== "") {
+    const newAmount = parseFloat(inputVal);
+    if (!isNaN(newAmount)) {
+      const diff = newAmount - currentAssetsVal;
+      if (diff !== 0) {
+        state.transactions.push({
+          id: `manual_adj_${sundayDateStr}_${Date.now()}`,
+          date: sundayDateStr,
+          type: 'CASH',
+          amount: diff,
+          card_id: null,
+          description: `資産額手動調整 (${sundayDateStr}時点: ¥${newAmount.toLocaleString()})`
+        });
+        saveData();
+        showToast(`✅ ${sundayDateStr.substring(5)}時点の資産額を ¥${newAmount.toLocaleString()} に更新しました！`);
+      }
+    } else {
+      alert("有効な数字を入力してください。");
+    }
+  }
+}
+
+// 明細編集モーダルを開く
+function openEditTxModal(id) {
+  const tx = state.transactions.find(t => t.id === id);
+  if (!tx) return;
+  
+  document.getElementById("edit-tx-id").value = tx.id;
+  document.getElementById("edit-tx-date").value = tx.date;
+  document.getElementById("edit-tx-amount").value = tx.amount;
+  document.getElementById("edit-tx-desc").value = tx.description || "";
+  
+  const modal = document.getElementById("edit-tx-modal");
+  if (modal) modal.showModal();
+}
+
+function deleteTransaction(id) {
+  state.transactions = state.transactions.filter(t => t.id !== id);
+  saveData();
+  showToast("🗑️ 明細を削除しました");
 }
 
 function renderMasterSettings() {
-  // カードリスト
   const cardList = document.getElementById("card-list");
+  if (!cardList) return;
   cardList.innerHTML = "";
   
   state.cards.forEach(card => {
     const li = document.createElement("li");
     li.innerHTML = `
       <div>
-        <strong>${card.name}</strong> <small>(${card.company || '国際ブランド'})</small>
+        <strong>${card.name}</strong> <small>(${card.company || 'カード'})</small>
         <div><small class="help-text">毎月 ${card.withdrawal_day} 日引き落とし</small></div>
       </div>
-      <button class="btn-danger-sm" onclick="deleteCard('${card.id}')">削除</button>
+      <button class="btn-danger-sm" onclick="deleteCard('${card.id}')">🗑️ 削除</button>
     `;
     cardList.appendChild(li);
   });
   
-  // 交通費月チェックボックス
   const monthsGrid = document.getElementById("transport-months-grid");
-  monthsGrid.innerHTML = "";
-  const selectedMonths = state.incomeSettings.transport_months || [];
-  
-  for (let m = 1; m <= 12; m++) {
-    const isChecked = selectedMonths.includes(m) ? "checked" : "";
-    const label = document.createElement("label");
-    label.className = "checkbox-label";
-    label.innerHTML = `<input type="checkbox" name="transport_month" value="${m}" ${isChecked}> ${m}月`;
-    monthsGrid.appendChild(label);
+  if (monthsGrid) {
+    monthsGrid.innerHTML = "";
+    const selectedMonths = state.incomeSettings.transport_months || [];
+    
+    for (let m = 1; m <= 12; m++) {
+      const isChecked = selectedMonths.includes(m) ? "checked" : "";
+      const label = document.createElement("label");
+      label.className = "checkbox-label";
+      label.innerHTML = `<input type="checkbox" name="transport_month" value="${m}" ${isChecked}> ${m}月`;
+      monthsGrid.appendChild(label);
+    }
   }
 
-  // 初期総資産（移行用残高）のフィールド表示
   const initTx = state.transactions.find(t => t.id === "tx_initial_balance");
   if (initTx) {
-    document.getElementById("initial-balance-amount").value = initTx.amount;
-    document.getElementById("initial-balance-date").value = initTx.date;
-  } else {
-    document.getElementById("initial-balance-amount").value = 294771;
-    document.getElementById("initial-balance-date").value = "2026-08-02";
+    const elAmount = document.getElementById("initial-balance-amount");
+    const elDate = document.getElementById("initial-balance-date");
+    if (elAmount) elAmount.value = initTx.amount;
+    if (elDate) elDate.value = initTx.date;
   }
 }
 
 function deleteCard(id) {
   state.cards = state.cards.filter(c => c.id !== id);
   saveData();
+  showToast("🗑️ クレジットカードを削除しました");
 }
 
 // --- イベントハンドラ登録 ---
 document.addEventListener("DOMContentLoaded", () => {
-  // 今日の日付をセット
   const todayStr = new Date().toISOString().split('T')[0];
-  document.getElementById("cash-date").value = todayStr;
-  
-  // 今月をセット
   const yearMonth = todayStr.substring(0, 7);
-  document.getElementById("card-month").value = yearMonth;
+  
+  if (document.getElementById("cash-date")) document.getElementById("cash-date").value = todayStr;
+  if (document.getElementById("card-month")) document.getElementById("card-month").value = yearMonth;
 
   // タブ切り替え
   document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -569,175 +549,167 @@ document.addEventListener("DOMContentLoaded", () => {
       
       btn.classList.add("active");
       const tabId = `tab-${btn.dataset.tab}`;
-      document.getElementById(tabId).classList.add("active");
+      const tabEl = document.getElementById(tabId);
+      if (tabEl) tabEl.classList.add("active");
     });
   });
 
-  // 収支入力: 種別切り替え (現金 / カード)
-  document.querySelectorAll('input[name="payment_type"]').forEach(radio => {
-    radio.addEventListener("change", (e) => {
-      if (e.target.value === "CASH") {
-        document.getElementById("cash-fields").classList.remove("hidden");
-        document.getElementById("card-fields").classList.add("hidden");
+  // 収支フォーム送信 (二重投稿防止 & 登録完了フィードバック & 入力クリア)
+  const txForm = document.getElementById("transaction-form");
+  if (txForm) {
+    txForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const submitBtn = txForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true; // 連打防止
+      
+      const sign = document.getElementById("amount-sign").value;
+      const rawAmount = parseFloat(document.getElementById("amount").value);
+      const description = document.getElementById("description").value;
+      
+      let txDate = todayStr;
+      let cardId = null;
+      let amount = 0;
+      let type = selectedPaymentMethod.type;
+      
+      if (type === "CASH") {
+        txDate = document.getElementById("cash-date").value;
+        amount = sign === '-' ? -Math.abs(rawAmount) : Math.abs(rawAmount);
       } else {
-        document.getElementById("cash-fields").classList.add("hidden");
-        document.getElementById("card-fields").classList.remove("hidden");
+        amount = -Math.abs(rawAmount);
+        cardId = selectedPaymentMethod.cardId;
+        const monthStr = document.getElementById("card-month").value;
+        const card = state.cards.find(c => c.id === cardId);
+        if (card && monthStr) {
+          txDate = generateCreditCardWithdrawalDate(monthStr, card.withdrawal_day);
+        }
       }
-    });
-  });
-
-  // 収支フォーム送信
-  document.getElementById("transaction-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const sign = document.getElementById("amount-sign").value;
-    const rawAmount = parseFloat(document.getElementById("amount").value);
-    const description = document.getElementById("description").value;
-    
-    let txDate = todayStr;
-    let cardId = null;
-    let amount = 0;
-    let type = selectedPaymentMethod.type;
-    
-    if (type === "CASH") {
-      txDate = document.getElementById("cash-date").value;
-      amount = sign === '-' ? -Math.abs(rawAmount) : Math.abs(rawAmount);
-    } else {
-      // クレジットカード選択時 (パネルで選択されたカード)
-      amount = -Math.abs(rawAmount); // クレジットカードは常にマイナス (支出)
-      cardId = selectedPaymentMethod.cardId;
-      const monthStr = document.getElementById("card-month").value;
-      const card = state.cards.find(c => c.id === cardId);
-      if (card && monthStr) {
-        txDate = generateCreditCardWithdrawalDate(monthStr, card.withdrawal_day);
+      
+      let cardName = "";
+      if (cardId) {
+        const c = state.cards.find(x => x.id === cardId);
+        if (c) cardName = c.name;
       }
-    }
-    
-    let cardName = "";
-    if (cardId) {
-      const c = state.cards.find(x => x.id === cardId);
-      if (c) cardName = c.name;
-    }
-    
-    state.transactions.push({
-      id: `tx_${Date.now()}`,
-      date: txDate,
-      type: type,
-      amount: amount,
-      card_id: cardId,
-      description: description || (cardName ? `${cardName} 利用` : (type === 'CREDIT_CARD' ? "クレジットカード利用" : "現金取引"))
+      
+      state.transactions.push({
+        id: `tx_${Date.now()}`,
+        date: txDate,
+        type: type,
+        amount: amount,
+        card_id: cardId,
+        description: description || (cardName ? `${cardName} 利用` : (type === 'CREDIT_CARD' ? "クレジットカード利用" : "現金取引"))
+      });
+      
+      saveData();
+      
+      // ✅ 登録完了フィードバック & フォーム内容クリア
+      showToast(`✅ 収支データを保存しました！ (${txDate} / ¥${amount.toLocaleString()})`);
+      document.getElementById("amount").value = "";
+      document.getElementById("description").value = "";
+      
+      setTimeout(() => {
+        if (submitBtn) submitBtn.disabled = false;
+      }, 500);
     });
-    
-    saveData();
-    alert(`記録を保存しました！\n手段: ${cardName || '現金'}\n日付: ${txDate}\n金額: ${amount >= 0 ? '+' : ''}¥${amount.toLocaleString()}`);
-    document.getElementById("transaction-form").reset();
-    document.getElementById("cash-date").value = todayStr;
-    document.getElementById("card-month").value = yearMonth;
-  });
+  }
 
-  // 給与・交通費設定保存
-  document.getElementById("salary-setting-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const salary_amount = parseFloat(document.getElementById("salary-amount").value || 0);
-    const salary_day = parseInt(document.getElementById("salary-day").value, 10);
-    const weekend_adj = document.querySelector('input[name="weekend_adj"]:checked').value;
-    const transport_amount = parseFloat(document.getElementById("transport-amount").value || 0);
-    
-    const transport_months = [];
-    document.querySelectorAll('input[name="transport_month"]:checked').forEach(cb => {
-      transport_months.push(parseInt(cb.value, 10));
+  // クレジットカードマスタ追加 (二重投稿防止 & 登録完了フィードバック & 入力クリア)
+  const cardForm = document.getElementById("card-master-form");
+  if (cardForm) {
+    cardForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const submitBtn = cardForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+      
+      const name = document.getElementById("master-card-name").value;
+      const company = document.getElementById("master-card-company").value;
+      const day = parseInt(document.getElementById("master-card-day").value, 10);
+      
+      state.cards.push({
+        id: `card_${Date.now()}`,
+        name: name,
+        company: company,
+        withdrawal_day: day
+      });
+      
+      saveData();
+      showToast(`✅ クレジットカード「${name}」を登録しました！`);
+      cardForm.reset();
+      
+      setTimeout(() => {
+        if (submitBtn) submitBtn.disabled = false;
+      }, 500);
     });
-    
-    state.incomeSettings = {
-      salary_amount,
-      salary_day,
-      weekend_adj,
-      transport_amount,
-      transport_months
-    };
-    
-    // スケジュール自動同期 & 永続保存
-    syncIncomeSchedule();
-    saveData();
-    alert(`収入設定を保存しました！ (給与: +¥${salary_amount.toLocaleString()} / 振込日: 毎月${salary_day}日)`);
-  });
+  }
 
-  // クレジットカードマスタ追加
-  document.getElementById("card-master-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const name = document.getElementById("master-card-name").value;
-    const company = document.getElementById("master-card-company").value;
-    const day = parseInt(document.getElementById("master-card-day").value, 10);
-    
-    state.cards.push({
-      id: `card_${Date.now()}`,
-      name: name,
-      company: company,
-      withdrawal_day: day
+  // 給与・交通費設定保存 (二重投稿防止 & 登録完了フィードバック)
+  const salaryForm = document.getElementById("salary-setting-form");
+  if (salaryForm) {
+    salaryForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const submitBtn = salaryForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+      
+      const salary_amount = parseFloat(document.getElementById("salary-amount").value || 0);
+      const salary_day = parseInt(document.getElementById("salary-day").value, 10);
+      const weekend_adj = document.querySelector('input[name="weekend_adj"]:checked').value;
+      const transport_amount = parseFloat(document.getElementById("transport-amount").value || 0);
+      
+      const transport_months = [];
+      document.querySelectorAll('input[name="transport_month"]:checked').forEach(cb => {
+        transport_months.push(parseInt(cb.value, 10));
+      });
+      
+      state.incomeSettings = {
+        salary_amount,
+        salary_day,
+        weekend_adj,
+        transport_amount,
+        transport_months
+      };
+      
+      syncIncomeSchedule();
+      saveData();
+      showToast(`✅ 収入・交通費設定を保存しました！`);
+      
+      setTimeout(() => {
+        if (submitBtn) submitBtn.disabled = false;
+      }, 500);
     });
-    
-    saveData();
-    document.getElementById("card-master-form").reset();
-  });
+  }
 
-  // 給与・交通費設定保存
-  document.getElementById("salary-setting-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const salary_amount = parseFloat(document.getElementById("salary-amount").value);
-    const salary_day = parseInt(document.getElementById("salary-day").value, 10);
-    const weekend_adj = document.querySelector('input[name="weekend_adj"]:checked').value;
-    const transport_amount = parseFloat(document.getElementById("transport-amount").value);
-    
-    const transport_months = [];
-    document.querySelectorAll('input[name="transport_month"]:checked').forEach(cb => {
-      transport_months.push(parseInt(cb.value, 10));
-    });
-    
-    state.incomeSettings = {
-      salary_amount,
-      salary_day,
-      weekend_adj,
-      transport_amount,
-      transport_months
-    };
-    
-    // スケジュール自動生成
-    syncIncomeSchedule();
-    saveData();
-    alert("収入の自動計上設定を保存し、スケジュールを更新しました！");
-  });
+  // 移行用 初期総資産更新フォーム (二重投稿防止 & 登録完了フィードバック)
+  const initForm = document.getElementById("initial-balance-form");
+  if (initForm) {
+    initForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const submitBtn = initForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+      
+      const amount = parseFloat(document.getElementById("initial-balance-amount").value);
+      const date = document.getElementById("initial-balance-date").value;
+      
+      const existingIndex = state.transactions.findIndex(t => t.id === "tx_initial_balance");
+      const initRecord = {
+        id: "tx_initial_balance",
+        date: date,
+        type: "CASH",
+        amount: amount,
+        card_id: null,
+        description: "移行時 初期総資産 (8/2時点)"
+      };
 
-  // 移行用 初期総資産更新フォーム
-  document.getElementById("initial-balance-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const amount = parseFloat(document.getElementById("initial-balance-amount").value);
-    const date = document.getElementById("initial-balance-date").value;
-    
-    // 既存の初期残高データを検索・置換または新規挿入
-    const existingIndex = state.transactions.findIndex(t => t.id === "tx_initial_balance");
-    const initRecord = {
-      id: "tx_initial_balance",
-      date: date,
-      type: "CASH",
-      amount: amount,
-      card_id: null,
-      description: "移行時 初期総資産"
-    };
+      if (existingIndex >= 0) {
+        state.transactions[existingIndex] = initRecord;
+      } else {
+        state.transactions.unshift(initRecord);
+      }
 
-    if (existingIndex >= 0) {
-      state.transactions[existingIndex] = initRecord;
-    } else {
-      state.transactions.unshift(initRecord);
-    }
-
-    saveData();
-    alert(`初期総資産（¥${amount.toLocaleString()} / 基準日: ${date}）を登録・更新しました！`);
-  });
-
-  // 検索フィルターのリアルタイム更新
-  const searchInput = document.getElementById("history-search-input");
-  if (searchInput) {
-    searchInput.addEventListener("input", () => {
-      renderHistoryTab();
+      saveData();
+      showToast(`✅ 初期総資産 (¥${amount.toLocaleString()}) を更新しました！`);
+      
+      setTimeout(() => {
+        if (submitBtn) submitBtn.disabled = false;
+      }, 500);
     });
   }
 
@@ -760,12 +732,12 @@ document.addEventListener("DOMContentLoaded", () => {
         saveData();
         const modal = document.getElementById("edit-tx-modal");
         if (modal) modal.close();
-        alert("明細データを修正・更新しました！");
+        showToast("✅ 明細データを更新しました！");
       }
     });
   }
 
-  // 初回起動処理: 収入自動設定および毎週3000円マイナスを確実に同期反映
+  // 初回起動処理
   syncIncomeSchedule();
   saveData();
 });
