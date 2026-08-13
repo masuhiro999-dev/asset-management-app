@@ -1,11 +1,11 @@
 /**
  * AssetPulse - 資産管理アプリケーション コアロジック
  * 
- * 🌐 全端末リアルタイム同期設定:
- * 以下の FIREBASE_DATABASE_URL に Firebase の Realtime Database URL を貼り付けるだけで、
- * どの端末（スマホ・PC）からアクセスしても手動入力なしで最初から自動同期されます！
+ * 🌐 全端末リアルタイム自動同期設定 (sannmaアプリ方式):
+ * 以下の FIREBASE_DATABASE_URL に Realtime Database の URL を貼り付けるだけで
+ * どの端末からアクセスしても自動同期されます。空欄の場合はローカル動作します。
  */
-const FIREBASE_DATABASE_URL = "https://asset-management-app-99b32-default-rtdb.firebaseio.com/"; // ← 例: "https://your-app-default-rtdb.firebaseio.com"
+const FIREBASE_DATABASE_URL = ""; // 例: "https://asset-app-default-rtdb.firebaseio.com"
 
 // 日本の祝日データ（2026年）
 const JAPANESE_HOLIDAYS = [
@@ -37,23 +37,10 @@ const DEFAULT_TRANSACTIONS = [
 // --- アプリケーション状態 ---
 let rawTransactions = JSON.parse(localStorage.getItem("asset_transactions")) || DEFAULT_TRANSACTIONS;
 
-// クレンジング
-rawTransactions = rawTransactions.filter(t => {
-  if ((t.type === 'SALARY' || (t.description && t.description.includes('給与'))) && t.amount < 0) {
-    return false;
-  }
-  return true;
-}).map(t => {
-  if (t.type === 'SALARY' || t.type === 'TRANSPORTATION' || (t.description && t.description.includes('給料') || t.description && t.description.includes('給与'))) {
-    return { ...t, amount: Math.abs(t.amount) };
-  }
-  return t;
-});
-
 let state = {
   cards: JSON.parse(localStorage.getItem("asset_cards")) || DEFAULT_CARD_MASTERS,
   incomeSettings: JSON.parse(localStorage.getItem("asset_income")) || DEFAULT_INCOME_SETTINGS,
-  transactions: rawTransactions
+  transactions: Array.isArray(rawTransactions) && rawTransactions.length > 0 ? rawTransactions : DEFAULT_TRANSACTIONS
 };
 
 // 🔥 Firebase Realtime Database 自動同期エンジン
@@ -80,7 +67,6 @@ function initFirebaseRealtimeDatabase() {
 
     if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-income);">🟢 全端末リアルタイム自動同期中 (${cleanUrl})</span>`;
 
-    // 📡 他端末での更新を1秒以内にリアルタイム受信するリスナー
     rtdb.ref("asset_pulse_data").on("value", snapshot => {
       const data = snapshot.val();
       if (data) {
@@ -104,13 +90,12 @@ function initFirebaseRealtimeDatabase() {
   }
 }
 
-// データの永続化とクラウド即時書き込み
+// データの永続化
 function saveData() {
   localStorage.setItem("asset_cards", JSON.stringify(state.cards));
   localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
   localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
 
-  // リモート更新中でない場合のみクラウドへ送信
   if (firebaseInitialized && rtdb && !isRemoteUpdating) {
     rtdb.ref("asset_pulse_data").set({
       cards: state.cards,
@@ -121,27 +106,9 @@ function saveData() {
   }
 
   renderAll();
-}     if (data.cards) state.cards = data.cards;
-        if (data.incomeSettings) state.incomeSettings = data.incomeSettings;
-        if (data.transactions) state.transactions = data.transactions;
-        
-        localStorage.setItem("asset_cards", JSON.stringify(state.cards));
-        localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
-        localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
-        
-        renderAll();
-      }
-    }, err => {
-      console.error("Firebase リスナーエラー:", err);
-    });
-
-  } catch (err) {
-    console.error("Firebase 初期化エラー:", err);
-    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー (${err.message})</span>`;
-  }
 }
 
-// トースト通知機能 (二重登録防止 & 明確な視覚的フィードバック)
+// トースト通知機能
 function showToast(message) {
   let toast = document.getElementById("global-toast");
   if (!toast) {
@@ -170,7 +137,7 @@ function isHolidayOrWeekend(date) {
   return JAPANESE_HOLIDAYS.includes(dateStr);
 }
 
-// 給与・交通費の土日祝前倒し/後倒し補正
+// 補正日付の計算
 function calculateAdjustedPaymentDate(year, month, targetDay, adjType) {
   const maxDay = new Date(year, month, 0).getDate();
   const actualDay = Math.min(targetDay, maxDay);
@@ -193,7 +160,7 @@ function calculateAdjustedPaymentDate(year, month, targetDay, adjType) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// クレジットカード引き落とし日結合
+// カード引き落とし日の生成
 function generateCreditCardWithdrawalDate(yearMonthStr, withdrawalDay) {
   const [yearStr, monthStr] = yearMonthStr.split('-');
   const year = parseInt(yearStr, 10);
@@ -206,7 +173,7 @@ function generateCreditCardWithdrawalDate(yearMonthStr, withdrawalDay) {
   return `${yearStr}-${monthStr}-${dd}`;
 }
 
-// 自動給与・交通費・毎週3000円自動マイナス バッチ生成
+// 自動スケジュールの同期
 function syncIncomeSchedule() {
   const { salary_amount, salary_day, weekend_adj, transport_amount, transport_months } = state.incomeSettings;
   
@@ -278,19 +245,16 @@ function syncIncomeSchedule() {
   }
 }
 
-// 週次ダッシュボード集計エンジン
+// 週次ダッシュボード計算
 function calculateWeeklyDashboard() {
   const sortedTxs = [...state.transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
-  
   const sundays = [];
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
   
   const currentSunday = new Date(today);
   const diffToSunday = (7 - today.getDay()) % 7;
   currentSunday.setDate(today.getDate() + diffToSunday);
   
-  // 直近の日曜日 (i = 0) から未来13週 (約3ヶ月先) の日曜日を昇順で生成
   for (let i = 0; i <= 13; i++) {
     const sun = new Date(currentSunday);
     sun.setDate(currentSunday.getDate() + (i * 7));
@@ -342,7 +306,7 @@ function calculateWeeklyDashboard() {
   return weeklyData;
 }
 
-// 決済パネル状態
+// 決済パネル選択
 let selectedPaymentMethod = { type: 'CASH' };
 
 function renderPaymentPanels() {
@@ -393,7 +357,7 @@ function selectPaymentPanel(method) {
   }
 }
 
-// 全レンダリング実行
+// 全描画実行
 function renderAll() {
   renderDashboard();
   renderPaymentPanels();
@@ -401,7 +365,7 @@ function renderAll() {
   renderRecentTransactions();
 }
 
-// 1. ダッシュボード レンダリング (スマホ縦画面高一覧性版)
+// ダッシュボード描画
 function renderDashboard() {
   const weeklyData = calculateWeeklyDashboard();
   const tbody = document.getElementById("weekly-table-body");
@@ -429,26 +393,21 @@ function renderDashboard() {
     .filter(t => t.date <= todayStr)
     .reduce((sum, t) => sum + t.amount, 0);
 
-  document.getElementById("kpi-total-assets").textContent = `¥${currentTotal.toLocaleString()}`;
+  const kpiTotal = document.getElementById("kpi-total-assets");
+  if (kpiTotal) kpiTotal.textContent = `¥${currentTotal.toLocaleString()}`;
   
   const thisSundayStr = currentSunday.toISOString().split('T')[0];
   const thisWeekData = weeklyData.find(w => w.sundayStr === thisSundayStr) || { weeklyIncrease: 0, weeklyDecrease: 0 };
 
-  document.getElementById("kpi-weekly-inc").textContent = `+¥${thisWeekData.weeklyIncrease.toLocaleString()}`;
-  document.getElementById("kpi-weekly-dec").textContent = `-¥${thisWeekData.weeklyDecrease.toLocaleString()}`;
-  
-  const incSubEl = document.querySelector(".kpi-card.weekly-inc .kpi-sub");
-  const decSubEl = document.querySelector(".kpi-card.weekly-dec .kpi-sub");
-  if (incSubEl) incSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の収入計`;
-  if (decSubEl) decSubEl.textContent = `今週 【${thisWeekDateRangeStr}】 の支出計`;
+  const kpiInc = document.getElementById("kpi-weekly-inc");
+  const kpiDec = document.getElementById("kpi-weekly-dec");
+  if (kpiInc) kpiInc.textContent = `+¥${thisWeekData.weeklyIncrease.toLocaleString()}`;
+  if (kpiDec) kpiDec.textContent = `-¥${thisWeekData.weeklyDecrease.toLocaleString()}`;
 
-  // 週次 資産増減リストのレンダリング (スマホ縦画面最適化)
-  // 要件: 1行で表示、年の表示不要(08/16)、基準日の開始日不要、並び順: 基準日 -> 現在の資産額 -> 純増減 -> 増額 -> 減額、¥マークは現在の資産額のみ
   weeklyData.forEach(row => {
     const tr = document.createElement("tr");
-    const shortSunday = row.sundayStr.substring(5).replace('-', '/'); // "08/16" 形式
+    const shortSunday = row.sundayStr.substring(5).replace('-', '/');
     
-    // 数値の整形 (¥マークは資産額のみ)
     const netSign = row.netChange >= 0 ? '+' : '';
     const netFormatted = `${netSign}${row.netChange.toLocaleString()}`;
     const incFormatted = row.weeklyIncrease > 0 ? `${row.weeklyIncrease.toLocaleString()}` : '0';
@@ -469,8 +428,7 @@ function renderDashboard() {
   });
 }
 
-// 2. 直近の明細履歴 レンダリング (スマホ縦画面高一覧性版)
-// 要件: 1件1行で表示、年表示不要(08/12)、種別はアイコンのみ(💵,💳,💼,🚌)、並び順: 日付 -> 金額 -> 種別 -> 内容/カード名 -> 操作、昇順(古い->新しい)
+// 明細履歴描画
 function renderRecentTransactions() {
   const tbody = document.getElementById("recent-transactions-body");
   if (!tbody) return;
@@ -487,9 +445,8 @@ function renderRecentTransactions() {
   
   recentTxs.forEach(tx => {
     const tr = document.createElement("tr");
-    const shortDate = tx.date.substring(5).replace('-', '/'); // "08/12" 形式
+    const shortDate = tx.date.substring(5).replace('-', '/');
     
-    // 種別はアイコンのみ表示
     let typeIcon = "💵";
     if (tx.type === "CREDIT_CARD") typeIcon = "💳";
     if (tx.type === "SALARY") typeIcon = "💼";
@@ -507,7 +464,6 @@ function renderRecentTransactions() {
       }
     }
     
-    // 並び順: 日付 -> 金額 -> 種別 -> 内容/カード名 -> 操作
     tr.innerHTML = `
       <td><strong>${shortDate}</strong></td>
       <td style="font-weight: 600; color: ${tx.amount >= 0 ? 'var(--accent-income)' : 'var(--accent-expense)'}">
@@ -524,7 +480,6 @@ function renderRecentTransactions() {
   });
 }
 
-// 資産額の手動書き換え
 function editWeeklyAssetAmount(sundayDateStr, currentAssetsVal) {
   const inputVal = prompt(`【${sundayDateStr} (日)】時点の「現在の資産額」を入力してください:`, currentAssetsVal);
   if (inputVal !== null && inputVal.trim() !== "") {
@@ -543,13 +498,10 @@ function editWeeklyAssetAmount(sundayDateStr, currentAssetsVal) {
         saveData();
         showToast(`✅ ${sundayDateStr.substring(5)}時点の資産額を ¥${newAmount.toLocaleString()} に更新しました！`);
       }
-    } else {
-      alert("有効な数字を入力してください。");
     }
   }
 }
 
-// 明細編集モーダルを開く
 function openEditTxModal(id) {
   const tx = state.transactions.find(t => t.id === id);
   if (!tx) return;
@@ -608,13 +560,10 @@ function renderMasterSettings() {
     if (elDate) elDate.value = initTx.date;
   }
 
-  // Firebase 設定のフォーム初期化表示
-  const savedFbKey = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
-  const savedFbConfig = localStorage.getItem("asset_fb_config") || "";
-  const elFbKey = document.getElementById("fb-sync-key");
-  const elFbConfig = document.getElementById("fb-config-json");
-  if (elFbKey) elFbKey.value = savedFbKey;
-  if (elFbConfig) elFbConfig.value = savedFbConfig;
+  const elRtdbUrl = document.getElementById("fb-config-json");
+  if (elRtdbUrl) {
+    elRtdbUrl.value = FIREBASE_DATABASE_URL || localStorage.getItem("asset_fb_rtdb_url") || "";
+  }
 }
 
 function deleteCard(id) {
@@ -623,7 +572,7 @@ function deleteCard(id) {
   showToast("🗑️ クレジットカードを削除しました");
 }
 
-// --- イベントハンドラ登録 ---
+// --- イベント登録 ---
 document.addEventListener("DOMContentLoaded", () => {
   const todayStr = new Date().toISOString().split('T')[0];
   const yearMonth = todayStr.substring(0, 7);
@@ -631,27 +580,27 @@ document.addEventListener("DOMContentLoaded", () => {
   if (document.getElementById("cash-date")) document.getElementById("cash-date").value = todayStr;
   if (document.getElementById("card-month")) document.getElementById("card-month").value = yearMonth;
 
-  // タブ切り替え
+  // タブ切り替え処理 (確実化)
   document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const tabTarget = btn.dataset.tab;
+      if (!tabTarget) return;
+
       document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
       document.querySelectorAll(".tab-content").forEach(t => t.classList.remove("active"));
       
       btn.classList.add("active");
-      const tabId = `tab-${btn.dataset.tab}`;
-      const tabEl = document.getElementById(tabId);
-      if (tabEl) tabEl.classList.add("active");
+      const targetEl = document.getElementById(`tab-${tabTarget}`);
+      if (targetEl) targetEl.classList.add("active");
     });
   });
 
-  // 収支フォーム送信 (二重投稿防止 & 登録完了フィードバック & 入力クリア)
+  // 収支フォーム
   const txForm = document.getElementById("transaction-form");
   if (txForm) {
     txForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const submitBtn = txForm.querySelector('button[type="submit"]');
-      if (submitBtn) submitBtn.disabled = true; // 連打防止
-      
       const sign = document.getElementById("amount-sign").value;
       const rawAmount = parseFloat(document.getElementById("amount").value);
       const description = document.getElementById("description").value;
@@ -690,26 +639,17 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       
       saveData();
-      
-      // ✅ 登録完了フィードバック & フォーム内容クリア
-      showToast(`✅ 収支データを保存しました！ (${txDate} / ¥${amount.toLocaleString()})`);
+      showToast(`✅ 収支データを保存しました！`);
       document.getElementById("amount").value = "";
       document.getElementById("description").value = "";
-      
-      setTimeout(() => {
-        if (submitBtn) submitBtn.disabled = false;
-      }, 500);
     });
   }
 
-  // クレジットカードマスタ追加 (二重投稿防止 & 登録完了フィードバック & 入力クリア)
+  // クレジットカードマスタ追加
   const cardForm = document.getElementById("card-master-form");
   if (cardForm) {
     cardForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const submitBtn = cardForm.querySelector('button[type="submit"]');
-      if (submitBtn) submitBtn.disabled = true;
-      
       const name = document.getElementById("master-card-name").value;
       const company = document.getElementById("master-card-company").value;
       const day = parseInt(document.getElementById("master-card-day").value, 10);
@@ -722,23 +662,16 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       
       saveData();
-      showToast(`✅ クレジットカード「${name}」を登録しました！`);
+      showToast(`✅ カード「${name}」を登録しました！`);
       cardForm.reset();
-      
-      setTimeout(() => {
-        if (submitBtn) submitBtn.disabled = false;
-      }, 500);
     });
   }
 
-  // 給与・交通費設定保存 (二重投稿防止 & 登録完了フィードバック)
+  // 給与・交通費フォーム
   const salaryForm = document.getElementById("salary-setting-form");
   if (salaryForm) {
     salaryForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const submitBtn = salaryForm.querySelector('button[type="submit"]');
-      if (submitBtn) submitBtn.disabled = true;
-      
       const salary_amount = parseFloat(document.getElementById("salary-amount").value || 0);
       const salary_day = parseInt(document.getElementById("salary-day").value, 10);
       const weekend_adj = document.querySelector('input[name="weekend_adj"]:checked').value;
@@ -759,22 +692,15 @@ document.addEventListener("DOMContentLoaded", () => {
       
       syncIncomeSchedule();
       saveData();
-      showToast(`✅ 収入・交通費設定を保存しました！`);
-      
-      setTimeout(() => {
-        if (submitBtn) submitBtn.disabled = false;
-      }, 500);
+      showToast(`✅ 収入設定を保存しました！`);
     });
   }
 
-  // 移行用 初期総資産更新フォーム (二重投稿防止 & 登録完了フィードバック)
+  // 初期総資産フォーム
   const initForm = document.getElementById("initial-balance-form");
   if (initForm) {
     initForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const submitBtn = initForm.querySelector('button[type="submit"]');
-      if (submitBtn) submitBtn.disabled = true;
-      
       const amount = parseFloat(document.getElementById("initial-balance-amount").value);
       const date = document.getElementById("initial-balance-date").value;
       
@@ -795,15 +721,30 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       saveData();
-      showToast(`✅ 初期総資産 (¥${amount.toLocaleString()}) を更新しました！`);
-      
-      setTimeout(() => {
-        if (submitBtn) submitBtn.disabled = false;
-      }, 500);
+      showToast(`✅ 初期総資産を更新しました！`);
     });
   }
 
-  // 明細データの修正保存フォーム
+  // Firebase Realtime Database 保存フォーム
+  const fbForm = document.getElementById("firebase-setting-form");
+  if (fbForm) {
+    fbForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const rtdbUrl = (document.getElementById("fb-config-json")?.value || "").trim();
+      
+      if (!rtdbUrl) {
+        alert("Realtime Database の URL (https://xxxx.firebaseio.com) を貼り付けてください。");
+        return;
+      }
+
+      localStorage.setItem("asset_fb_rtdb_url", rtdbUrl);
+      initFirebaseRealtimeDatabase();
+      saveData();
+      showToast("🔥 全端末リアルタイム自動同期の設定を保存しました！");
+    });
+  }
+
+  // 明細編集フォーム
   const editTxForm = document.getElementById("edit-tx-form");
   if (editTxForm) {
     editTxForm.addEventListener("submit", (e) => {
@@ -827,26 +768,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 🔥 4. Firebase Realtime Database 同期設定フォーム
-  const fbForm = document.getElementById("firebase-setting-form");
-  if (fbForm) {
-    fbForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const rtdbUrl = (document.getElementById("fb-config-json")?.value || "").trim();
-      
-      if (!rtdbUrl) {
-        alert("Realtime Database の URL (https://xxxx.firebaseio.com) を貼り付けてください。");
-        return;
-      }
-
-      localStorage.setItem("asset_fb_rtdb_url", rtdbUrl);
-      initFirebaseRealtimeDatabase();
-      saveData();
-      showToast("🔥 Firebase 全端末リアルタイム同期を設定しました！");
-    });
-  }
-
-  // 初回起動処理
+  // 初期化起動
   syncIncomeSchedule();
   initFirebaseRealtimeDatabase();
   saveData();
