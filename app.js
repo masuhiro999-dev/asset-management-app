@@ -78,19 +78,54 @@ function saveData() {
   renderAll();
 }
 
-// 🔥 Firebase クラウド同期初期化エンジン
+// 🔥 Firebase クラウド同期初期化エンジン (超強力スマートパーサー)
 function initFirebaseSync() {
-  const configJson = localStorage.getItem("asset_fb_config");
+  const configRaw = localStorage.getItem("asset_fb_config");
   const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
   const statusDisplay = document.getElementById("firebase-status-display");
 
-  if (!configJson || !window.firebase) {
+  if (!configRaw || !configRaw.trim() || !window.firebase) {
     if (statusDisplay) statusDisplay.innerHTML = '同期状態: <span style="color: var(--accent-warning);">⚪ 未接続 (ローカル保存中)</span>';
     return;
   }
 
   try {
-    const config = JSON.parse(configJson);
+    let config = {};
+    const text = configRaw.trim();
+
+    // 1. 正規表現で各キーの値（apiKey, authDomain, projectId 等）を抽出
+    const extractKey = (keyName) => {
+      const regex = new RegExp(`["']?${keyName}["']?\\s*:\\s*["']([^"']+)["']`, 'i');
+      const match = text.match(regex);
+      return match ? match[1] : null;
+    };
+
+    const apiKey = extractKey('apiKey');
+    const projectId = extractKey('projectId');
+    const authDomain = extractKey('authDomain') || (projectId ? `${projectId}.firebaseapp.com` : null);
+    const storageBucket = extractKey('storageBucket') || (projectId ? `${projectId}.appspot.com` : null);
+    const messagingSenderId = extractKey('messagingSenderId');
+    const appId = extractKey('appId');
+
+    if (apiKey && projectId) {
+      config = { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId };
+    } else {
+      // 2. 予備パース (標準JSON / JS Object)
+      let cleanStr = text;
+      if (cleanStr.includes('{') && cleanStr.includes('}')) {
+        cleanStr = cleanStr.substring(cleanStr.indexOf('{'), cleanStr.lastIndexOf('}') + 1);
+      }
+      const jsonLikeStr = cleanStr
+        .replace(/([a-zA-Z0-9_]+)\s*:/g, '"$1":')
+        .replace(/'/g, '"')
+        .replace(/,\s*}/g, '}');
+      config = JSON.parse(jsonLikeStr);
+    }
+
+    if (!config || !config.apiKey) {
+      throw new Error("apiKey が読み取れませんでした。");
+    }
+
     if (!firebase.apps.length) {
       firebase.initializeApp(config);
     }
@@ -118,8 +153,8 @@ function initFirebaseSync() {
     });
 
   } catch (err) {
-    console.error("Firebase 初期化エラー:", err);
-    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー (${err.message})</span>`;
+    console.error("Firebase 初期化詳細エラー:", err);
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー: ${err.message}</span>`;
   }
 }
 
