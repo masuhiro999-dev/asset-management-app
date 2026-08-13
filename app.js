@@ -5,7 +5,7 @@
  * 以下の FIREBASE_DATABASE_URL に Realtime Database の URL を貼り付けるだけで
  * どの端末からアクセスしても自動同期されます。空欄の場合はローカル動作します。
  */
-const FIREBASE_DATABASE_URL = ""; // 例: "https://asset-app-default-rtdb.firebaseio.com"
+const FIREBASE_DATABASE_URL = "https://asset-management-app-99b32-default-rtdb.firebaseio.com/"; // 例: "https://asset-app-default-rtdb.firebaseio.com"
 
 // 日本の祝日データ（2026年）
 const JAPANESE_HOLIDAYS = [
