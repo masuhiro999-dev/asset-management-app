@@ -78,7 +78,7 @@ function saveData() {
   renderAll();
 }
 
-// 🔥 Firebase クラウド同期初期化エンジン (超強力スマートパーサー)
+// 🔥 Firebase クラウド同期初期化エンジン (絶対パースエラーにならないダイレクト抽出型)
 function initFirebaseSync() {
   const configRaw = localStorage.getItem("asset_fb_config");
   const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
@@ -90,41 +90,35 @@ function initFirebaseSync() {
   }
 
   try {
-    let config = {};
     const text = configRaw.trim();
 
-    // 1. 正規表現で各キーの値（apiKey, authDomain, projectId 等）を抽出
-    const extractKey = (keyName) => {
-      const regex = new RegExp(`["']?${keyName}["']?\\s*:\\s*["']([^"']+)["']`, 'i');
+    // テキストから引用符の有無に関わらず apiKey, projectId 等をダイレクト抽出
+    const getValue = (keyName) => {
+      // keyName: "value" や keyName: 'value' や keyName:"value" などに対応
+      const regex = new RegExp(`["']?${keyName}["']?\\s*:\\s*["']?([^"',\\s\\}\\]]+)["']?`, 'i');
       const match = text.match(regex);
-      return match ? match[1] : null;
+      return match ? match[1].replace(/["']/g, '') : null;
     };
 
-    const apiKey = extractKey('apiKey');
-    const projectId = extractKey('projectId');
-    const authDomain = extractKey('authDomain') || (projectId ? `${projectId}.firebaseapp.com` : null);
-    const storageBucket = extractKey('storageBucket') || (projectId ? `${projectId}.appspot.com` : null);
-    const messagingSenderId = extractKey('messagingSenderId');
-    const appId = extractKey('appId');
+    const apiKey = getValue('apiKey');
+    const projectId = getValue('projectId');
+    const authDomain = getValue('authDomain') || (projectId ? `${projectId}.firebaseapp.com` : null);
+    const storageBucket = getValue('storageBucket') || (projectId ? `${projectId}.appspot.com` : null);
+    const messagingSenderId = getValue('messagingSenderId');
+    const appId = getValue('appId');
 
-    if (apiKey && projectId) {
-      config = { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId };
-    } else {
-      // 2. 予備パース (標準JSON / JS Object)
-      let cleanStr = text;
-      if (cleanStr.includes('{') && cleanStr.includes('}')) {
-        cleanStr = cleanStr.substring(cleanStr.indexOf('{'), cleanStr.lastIndexOf('}') + 1);
-      }
-      const jsonLikeStr = cleanStr
-        .replace(/([a-zA-Z0-9_]+)\s*:/g, '"$1":')
-        .replace(/'/g, '"')
-        .replace(/,\s*}/g, '}');
-      config = JSON.parse(jsonLikeStr);
+    if (!apiKey || apiKey === "undefined") {
+      throw new Error("apiKey が読み取れません。設定コードを貼り付け直してください。");
     }
 
-    if (!config || !config.apiKey) {
-      throw new Error("apiKey が読み取れませんでした。");
-    }
+    const config = {
+      apiKey: apiKey,
+      authDomain: authDomain,
+      projectId: projectId || "asset-app",
+      storageBucket: storageBucket,
+      messagingSenderId: messagingSenderId,
+      appId: appId
+    };
 
     if (!firebase.apps.length) {
       firebase.initializeApp(config);
@@ -153,8 +147,8 @@ function initFirebaseSync() {
     });
 
   } catch (err) {
-    console.error("Firebase 初期化詳細エラー:", err);
-    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー: ${err.message}</span>`;
+    console.error("Firebase 初期化エラー:", err);
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー (${err.message})</span>`;
   }
 }
 
@@ -849,15 +843,21 @@ document.addEventListener("DOMContentLoaded", () => {
   if (fbForm) {
     fbForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const syncKey = document.getElementById("fb-sync-key").value.trim() || "default-sync-room";
-      const configJson = document.getElementById("fb-config-json").value.trim();
+      const syncKey = (document.getElementById("fb-sync-key")?.value || "").trim() || "default-sync-room";
+      const configJson = (document.getElementById("fb-config-json")?.value || "").trim();
       
+      if (!configJson) {
+        alert("Firebase Config (設定コード) を貼り付けてください。");
+        return;
+      }
+
       localStorage.setItem("asset_fb_sync_key", syncKey);
       localStorage.setItem("asset_fb_config", configJson);
       
+      // 直ちに接続処理を実行
       initFirebaseSync();
       saveData();
-      showToast("🔥 Firebase クラウド同期を開始しました！");
+      showToast("🔥 Firebase クラウド同期の設定を更新しました！");
     });
   }
 
