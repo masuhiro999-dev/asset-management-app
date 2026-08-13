@@ -234,7 +234,7 @@
 
               <hr class="divider">
 
-              <h4>2. 交通費設定</h4>
+              <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">2. 交通費設定</h4>
               <div class="form-group">
                 <label for="transport-amount">交通費支給額 (円)</label>
                 <input type="number" id="transport-amount" class="form-control" placeholder="106000" value="106000">
@@ -247,6 +247,15 @@
                 <small class="help-text">※支給日は上記「給料振込日（土日祝補正後）」と同日になります</small>
               </div>
 
+              <hr class="divider">
+
+              <h4 style="margin-bottom: 0.5rem; color: var(--accent-primary);">3. 定額自動支出設定</h4>
+              <div class="form-group">
+                <label for="weekly-fixed-amount">固定支出金額 (円)</label>
+                <input type="number" id="weekly-fixed-amount" class="form-control" placeholder="3000" value="3000" min="0" required>
+                <small class="help-text">※毎週日曜日にこの金額が自動スケジューリング（定額支出）として計上されます</small>
+              </div>
+
               <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">設定を保存 & スケジュールに適用</button>
             </form>
 
@@ -254,7 +263,7 @@
 
             <!-- 移行用 初期総資産設定 -->
             <form id="initial-balance-form">
-              <h4>3. 移行時 初期総資産設定</h4>
+              <h4>4. 移行時 初期総資産設定</h4>
               <div class="form-group">
                 <label for="initial-balance-amount">アプリ開始時点（移行時）の総資産額 (円)</label>
                 <input type="number" id="initial-balance-amount" class="form-control" placeholder="294771" required>
@@ -289,6 +298,6 @@
     </button>
   </nav>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

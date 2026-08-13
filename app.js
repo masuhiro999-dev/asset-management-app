@@ -27,7 +27,8 @@ const DEFAULT_INCOME_SETTINGS = {
   salary_day: 25,
   weekend_adj: "NEXT_WORKDAY", // 繰り下げ (直後の平日に後倒し)
   transport_amount: 106000,
-  transport_months: [3, 6, 9, 12]
+  transport_months: [3, 6, 9, 12],
+  weekly_fixed_amount: 3000
 };
 
 const DEFAULT_TRANSACTIONS = [
@@ -217,31 +218,35 @@ function syncIncomeSchedule() {
     }
   }
 
-  // 毎週3,000円の自動マイナス
-  const startDateObj = new Date("2026-08-03");
-  const endDateObj = new Date(currentYear, 11, 31);
-  let curr = new Date(startDateObj);
-  const diffToSun = (7 - curr.getDay()) % 7;
-  curr.setDate(curr.getDate() + diffToSun);
+  // 毎週の定額自動支出 (固定支出金額)
+  const fixedAmount = Math.abs(parseFloat(state.incomeSettings.weekly_fixed_amount !== undefined ? state.incomeSettings.weekly_fixed_amount : 3000));
   
-  while (curr <= endDateObj) {
-    const yyyy = curr.getFullYear();
-    const mm = String(curr.getMonth() + 1).padStart(2, '0');
-    const dd = String(curr.getDate()).padStart(2, '0');
-    const dateStr = `${yyyy}-${mm}-${dd}`;
+  if (fixedAmount > 0) {
+    const startDateObj = new Date("2026-08-03");
+    const endDateObj = new Date(currentYear, 11, 31);
+    let curr = new Date(startDateObj);
+    const diffToSun = (7 - curr.getDay()) % 7;
+    curr.setDate(curr.getDate() + diffToSun);
     
-    if (dateStr >= START_DATE) {
-      state.transactions.push({
-        id: `weekly_auto_minus_${dateStr}`,
-        date: dateStr,
-        type: 'CASH',
-        amount: -3000,
-        card_id: null,
-        description: '毎週定額支出 (-¥3,000)'
-      });
+    while (curr <= endDateObj) {
+      const yyyy = curr.getFullYear();
+      const mm = String(curr.getMonth() + 1).padStart(2, '0');
+      const dd = String(curr.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      
+      if (dateStr >= START_DATE) {
+        state.transactions.push({
+          id: `weekly_auto_minus_${dateStr}`,
+          date: dateStr,
+          type: 'CASH',
+          amount: -fixedAmount,
+          card_id: null,
+          description: `固定支出 (-¥${fixedAmount.toLocaleString()})`
+        });
+      }
+      
+      curr.setDate(curr.getDate() + 7);
     }
-    
-    curr.setDate(curr.getDate() + 7);
   }
 }
 
@@ -539,16 +544,18 @@ function renderMasterSettings() {
     });
   }
   
-  // 2. 収入・給与・交通費設定のフォーム値復元（直近に更新したデータを維持）
+  // 2. 収入・給与・交通費・固定支出設定のフォーム値復元（直近に更新したデータを維持）
   const inc = state.incomeSettings || DEFAULT_INCOME_SETTINGS;
   
   const elSalaryAmount = document.getElementById("salary-amount");
   const elSalaryDay = document.getElementById("salary-day");
   const elTransportAmount = document.getElementById("transport-amount");
+  const elWeeklyFixedAmount = document.getElementById("weekly-fixed-amount");
   
   if (elSalaryAmount) elSalaryAmount.value = inc.salary_amount !== undefined ? inc.salary_amount : 50000;
   if (elSalaryDay) elSalaryDay.value = inc.salary_day !== undefined ? inc.salary_day : 25;
   if (elTransportAmount) elTransportAmount.value = inc.transport_amount !== undefined ? inc.transport_amount : 106000;
+  if (elWeeklyFixedAmount) elWeeklyFixedAmount.value = inc.weekly_fixed_amount !== undefined ? inc.weekly_fixed_amount : 3000;
   
   // 土日祝ラジオボタンの選択状態復元
   const radAdj = document.querySelectorAll('input[name="weekend_adj"]');
@@ -698,6 +705,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const salary_day = parseInt(document.getElementById("salary-day").value, 10);
       const weekend_adj = document.querySelector('input[name="weekend_adj"]:checked').value;
       const transport_amount = parseFloat(document.getElementById("transport-amount").value || 0);
+      const weekly_fixed_amount = parseFloat(document.getElementById("weekly-fixed-amount").value || 0);
       
       const transport_months = [];
       document.querySelectorAll('input[name="transport_month"]:checked').forEach(cb => {
@@ -709,7 +717,8 @@ document.addEventListener("DOMContentLoaded", () => {
         salary_day,
         weekend_adj,
         transport_amount,
-        transport_months
+        transport_months,
+        weekly_fixed_amount
       };
       
       syncIncomeSchedule();
