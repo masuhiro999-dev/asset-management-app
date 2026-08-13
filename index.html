@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -224,38 +224,7 @@
                 <input type="number" id="salary-day" class="form-control" min="1" max="31" value="25">
               </div>
               <div class="form-group">
-                <label>振込日が「土日祝」の場合の補正</label>
-                <div class="radio-group">
-                  <label class="radio-label">
-                    <input type="radio" name="weekend_adj" value="PREVIOUS_WORKDAY" checked> 直前の平日に前倒し
-                  </label>
-                  <label class="radio-label">
-                    <input type="radio" name="weekend_adj" value="NEXT_WORKDAY"> 直後の平日に後倒し
-                  </label>
-                </div>
-              </div>
-
-              <hr class="divider">
-
-              <h4>2. 交通費設定</h4>
-              <div class="form-group">
-                <label for="transport-amount">交通費支給額 (円)</label>
-                <input type="number" id="transport-amount" class="form-control" placeholder="15000" value="15000">
-              </div>
-              <div class="form-group">
-                <label>支給される月 (複数選択可)</label>
-                <div class="checkbox-grid" id="transport-months-grid">
-                  <!-- 1月〜12月のチェックボックスを動的生成 -->
-                </div>
-                <small class="help-text">※支給日は上記「給与振込日（土日祝補正後）」と同日になります</small>
-              </div>
-
-              <button type="submit" class="btn btn-primary btn-block">収入自動計上設定を保存 & スケジュール適用</button>
-            </form>
-
-            <hr class="divider">
-
-            <!-- 移行用 初期総資産設定 -->
+                <label>振込日が「土日祝」の場合の�            <!-- 移行用 初期総資産設定 -->
             <form id="initial-balance-form">
               <h4>3. 移行時 初期総資産設定</h4>
               <div class="form-group">
@@ -269,30 +238,16 @@
               </div>
               <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
             </form>
+          </div>
+        </div>
+      </section>   </div>
+              <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
+            </form>
 
             <hr class="divider">
 
             <!-- 🔥 4. 複数端末 クラウド同期設定 (Firebase) -->
-            <form id="firebase-setting-form">
-              <h4>🔥 4. 複数端末 クラウド同期設定 (Firebase)</h4>
-              <p class="help-text" style="margin-bottom: 1rem; color: #a5b4fc;">
-                Firebaseの設定キーを入力すると、スマホ・PC・タブレット間で全データ・マスタがリアルタイム自動同期されます。
-              </p>
-              <div class="form-group">
-                <label for="fb-sync-key">同期ルームID / 共有グループ名</label>
-                <input type="text" id="fb-sync-key" class="form-control" placeholder="例: my-family-assets" value="default-sync-room" required>
-                <small class="help-text">※同じIDを入力した端末同士で全データが自動同期されます</small>
-              </div>
-              <div class="form-group">
-                <label for="fb-config-json">Firebase Config (JSONまたはapiKey等)</label>
-                <textarea id="fb-config-json" class="form-control" rows="4" placeholder='{"apiKey": "AIzaSy...", "projectId": "my-app", ...}'></textarea>
-                <small class="help-text">※Firebaseコンソールから取得した firebaseConfig をそのまま貼り付けます</small>
-              </div>
-              <div style="margin-bottom: 1rem; font-size: 0.85rem;" id="firebase-status-display">
-                同期状態: <span style="color: var(--accent-warning);">⚪ 未接続 (ローカル保存)</span>
-              </div>
-              <button type="submit" class="btn btn-primary btn-block">クラウドリアルタイム同期を開始</button>
-            </form>
+            
           </div>
         </div>
       </section>
