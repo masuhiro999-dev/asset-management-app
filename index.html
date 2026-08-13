@@ -8,6 +8,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Firebase JS SDK (v9+ compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -265,6 +268,30 @@
                 <input type="date" id="initial-balance-date" class="form-control" required>
               </div>
               <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
+            </form>
+
+            <hr class="divider">
+
+            <!-- 🔥 4. 複数端末 クラウド同期設定 (Firebase) -->
+            <form id="firebase-setting-form">
+              <h4>🔥 4. 複数端末 クラウド同期設定 (Firebase)</h4>
+              <p class="help-text" style="margin-bottom: 1rem; color: #a5b4fc;">
+                Firebaseの設定キーを入力すると、スマホ・PC・タブレット間で全データ・マスタがリアルタイム自動同期されます。
+              </p>
+              <div class="form-group">
+                <label for="fb-sync-key">同期ルームID / 共有グループ名</label>
+                <input type="text" id="fb-sync-key" class="form-control" placeholder="例: my-family-assets" value="default-sync-room" required>
+                <small class="help-text">※同じIDを入力した端末同士で全データが自動同期されます</small>
+              </div>
+              <div class="form-group">
+                <label for="fb-config-json">Firebase Config (JSONまたはapiKey等)</label>
+                <textarea id="fb-config-json" class="form-control" rows="4" placeholder='{"apiKey": "AIzaSy...", "projectId": "my-app", ...}'></textarea>
+                <small class="help-text">※Firebaseコンソールから取得した firebaseConfig をそのまま貼り付けます</small>
+              </div>
+              <div style="margin-bottom: 1rem; font-size: 0.85rem;" id="firebase-status-display">
+                同期状態: <span style="color: var(--accent-warning);">⚪ 未接続 (ローカル保存)</span>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block">クラウドリアルタイム同期を開始</button>
             </form>
           </div>
         </div>

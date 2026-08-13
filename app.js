@@ -51,12 +51,76 @@ let state = {
   transactions: rawTransactions
 };
 
-// データの永続化と他端末同期フック
+// データの永続化と他端末リアルタイムクラウド同期フック
+let db = null;
+let firebaseInitialized = false;
+
 function saveData() {
   localStorage.setItem("asset_cards", JSON.stringify(state.cards));
   localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
   localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
+  
+  // 🔥 Firebase リアルタイムクラウド同期が有効な場合、Firestoreにも即時アップロード
+  if (firebaseInitialized && db) {
+    const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
+    db.collection("asset_pulse_rooms").doc(syncRoomId).set({
+      cards: state.cards,
+      incomeSettings: state.incomeSettings,
+      transactions: state.transactions,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).then(() => {
+      console.log("🔥 Firebase リアルタイムクラウド同期完了");
+    }).catch(err => {
+      console.error("Firebase 同期エラー:", err);
+    });
+  }
+  
   renderAll();
+}
+
+// 🔥 Firebase クラウド同期初期化エンジン
+function initFirebaseSync() {
+  const configJson = localStorage.getItem("asset_fb_config");
+  const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
+  const statusDisplay = document.getElementById("firebase-status-display");
+
+  if (!configJson || !window.firebase) {
+    if (statusDisplay) statusDisplay.innerHTML = '同期状態: <span style="color: var(--accent-warning);">⚪ 未接続 (ローカル保存中)</span>';
+    return;
+  }
+
+  try {
+    const config = JSON.parse(configJson);
+    if (!firebase.apps.length) {
+      firebase.initializeApp(config);
+    }
+    db = firebase.firestore();
+    firebaseInitialized = true;
+    
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-income);">🟢 クラウドリアルタイム同期中 (ルーム: ${syncRoomId})</span>`;
+
+    // 📡 リアルタイム受信用リスナー (他端末でデータが更新されたら即座に全端末の画面を更新)
+    db.collection("asset_pulse_rooms").doc(syncRoomId).onSnapshot(doc => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (data.cards) state.cards = data.cards;
+        if (data.incomeSettings) state.incomeSettings = data.incomeSettings;
+        if (data.transactions) state.transactions = data.transactions;
+        
+        localStorage.setItem("asset_cards", JSON.stringify(state.cards));
+        localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
+        localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
+        
+        renderAll();
+      }
+    }, err => {
+      console.error("Firebase リスナーエラー:", err);
+    });
+
+  } catch (err) {
+    console.error("Firebase 初期化エラー:", err);
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 設定エラー (${err.message})</span>`;
+  }
 }
 
 // トースト通知機能 (二重登録防止 & 明確な視覚的フィードバック)
@@ -525,6 +589,14 @@ function renderMasterSettings() {
     if (elAmount) elAmount.value = initTx.amount;
     if (elDate) elDate.value = initTx.date;
   }
+
+  // Firebase 設定のフォーム初期化表示
+  const savedFbKey = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
+  const savedFbConfig = localStorage.getItem("asset_fb_config") || "";
+  const elFbKey = document.getElementById("fb-sync-key");
+  const elFbConfig = document.getElementById("fb-config-json");
+  if (elFbKey) elFbKey.value = savedFbKey;
+  if (elFbConfig) elFbConfig.value = savedFbConfig;
 }
 
 function deleteCard(id) {
@@ -737,7 +809,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // 🔥 4. Firebase クラウド同期設定保存フォーム
+  const fbForm = document.getElementById("firebase-setting-form");
+  if (fbForm) {
+    fbForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const syncKey = document.getElementById("fb-sync-key").value.trim() || "default-sync-room";
+      const configJson = document.getElementById("fb-config-json").value.trim();
+      
+      localStorage.setItem("asset_fb_sync_key", syncKey);
+      localStorage.setItem("asset_fb_config", configJson);
+      
+      initFirebaseSync();
+      saveData();
+      showToast("🔥 Firebase クラウド同期を開始しました！");
+    });
+  }
+
   // 初回起動処理
   syncIncomeSchedule();
+  initFirebaseSync();
   saveData();
 });
