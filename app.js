@@ -1,6 +1,11 @@
 /**
- * AssetPulse - 資産管理アプリケーション コアロジック (スマホ縦画面最適化 & 複数端末同期対応)
+ * AssetPulse - 資産管理アプリケーション コアロジック
+ * 
+ * 🌐 全端末リアルタイム同期設定:
+ * 以下の FIREBASE_DATABASE_URL に Firebase の Realtime Database URL を貼り付けるだけで、
+ * どの端末（スマホ・PC）からアクセスしても手動入力なしで最初から自動同期されます！
  */
+const FIREBASE_DATABASE_URL = ""; // ← 例: "https://your-app-default-rtdb.firebaseio.com"
 
 // 日本の祝日データ（2026年）
 const JAPANESE_HOLIDAYS = [
@@ -32,14 +37,14 @@ const DEFAULT_TRANSACTIONS = [
 // --- アプリケーション状態 ---
 let rawTransactions = JSON.parse(localStorage.getItem("asset_transactions")) || DEFAULT_TRANSACTIONS;
 
-// クレンジング: 古いストレージ内の誤った給与・交通費マイナスデータを完全除去・正数化
+// クレンジング
 rawTransactions = rawTransactions.filter(t => {
   if ((t.type === 'SALARY' || (t.description && t.description.includes('給与'))) && t.amount < 0) {
     return false;
   }
   return true;
 }).map(t => {
-  if (t.type === 'SALARY' || t.type === 'TRANSPORTATION' || (t.description && t.description.includes('給与'))) {
+  if (t.type === 'SALARY' || t.type === 'TRANSPORTATION' || (t.description && t.description.includes('給料') || t.description && t.description.includes('給与'))) {
     return { ...t, amount: Math.abs(t.amount) };
   }
   return t;
@@ -51,88 +56,72 @@ let state = {
   transactions: rawTransactions
 };
 
-// データの永続化と他端末リアルタイムクラウド同期フック
-let db = null;
+// 🔥 Firebase Realtime Database 自動同期エンジン
+let rtdb = null;
 let firebaseInitialized = false;
+let isRemoteUpdating = false;
 
-function saveData() {
-  localStorage.setItem("asset_cards", JSON.stringify(state.cards));
-  localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
-  localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
-  
-  // 🔥 Firebase リアルタイムクラウド同期が有効な場合、Firestoreにも即時アップロード
-  if (firebaseInitialized && db) {
-    const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
-    db.collection("asset_pulse_rooms").doc(syncRoomId).set({
-      cards: state.cards,
-      incomeSettings: state.incomeSettings,
-      transactions: state.transactions,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true }).then(() => {
-      console.log("🔥 Firebase リアルタイムクラウド同期完了");
-    }).catch(err => {
-      console.error("Firebase 同期エラー:", err);
-    });
-  }
-  
-  renderAll();
-}
-
-// 🔥 Firebase クラウド同期初期化エンジン (絶対パースエラーにならないダイレクト抽出型)
-function initFirebaseSync() {
-  const configRaw = localStorage.getItem("asset_fb_config");
-  const syncRoomId = localStorage.getItem("asset_fb_sync_key") || "default-sync-room";
+function initFirebaseRealtimeDatabase() {
+  const dbUrl = FIREBASE_DATABASE_URL || localStorage.getItem("asset_fb_rtdb_url") || "";
   const statusDisplay = document.getElementById("firebase-status-display");
 
-  if (!configRaw || !configRaw.trim() || !window.firebase) {
+  if (!dbUrl || !dbUrl.trim() || !window.firebase) {
     if (statusDisplay) statusDisplay.innerHTML = '同期状態: <span style="color: var(--accent-warning);">⚪ 未接続 (ローカル保存中)</span>';
     return;
   }
 
   try {
-    const text = configRaw.trim();
-
-    // テキストから引用符の有無に関わらず apiKey, projectId 等をダイレクト抽出
-    const getValue = (keyName) => {
-      // keyName: "value" や keyName: 'value' や keyName:"value" などに対応
-      const regex = new RegExp(`["']?${keyName}["']?\\s*:\\s*["']?([^"',\\s\\}\\]]+)["']?`, 'i');
-      const match = text.match(regex);
-      return match ? match[1].replace(/["']/g, '') : null;
-    };
-
-    const apiKey = getValue('apiKey');
-    const projectId = getValue('projectId');
-    const authDomain = getValue('authDomain') || (projectId ? `${projectId}.firebaseapp.com` : null);
-    const storageBucket = getValue('storageBucket') || (projectId ? `${projectId}.appspot.com` : null);
-    const messagingSenderId = getValue('messagingSenderId');
-    const appId = getValue('appId');
-
-    if (!apiKey || apiKey === "undefined") {
-      throw new Error("apiKey が読み取れません。設定コードを貼り付け直してください。");
-    }
-
-    const config = {
-      apiKey: apiKey,
-      authDomain: authDomain,
-      projectId: projectId || "asset-app",
-      storageBucket: storageBucket,
-      messagingSenderId: messagingSenderId,
-      appId: appId
-    };
-
+    const cleanUrl = dbUrl.trim();
     if (!firebase.apps.length) {
-      firebase.initializeApp(config);
+      firebase.initializeApp({ databaseURL: cleanUrl });
     }
-    db = firebase.firestore();
+    rtdb = firebase.database();
     firebaseInitialized = true;
-    
-    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-income);">🟢 クラウドリアルタイム同期中 (ルーム: ${syncRoomId})</span>`;
 
-    // 📡 リアルタイム受信用リスナー (他端末でデータが更新されたら即座に全端末の画面を更新)
-    db.collection("asset_pulse_rooms").doc(syncRoomId).onSnapshot(doc => {
-      if (doc.exists) {
-        const data = doc.data();
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-income);">🟢 全端末リアルタイム自動同期中 (${cleanUrl})</span>`;
+
+    // 📡 他端末での更新を1秒以内にリアルタイム受信するリスナー
+    rtdb.ref("asset_pulse_data").on("value", snapshot => {
+      const data = snapshot.val();
+      if (data) {
+        isRemoteUpdating = true;
         if (data.cards) state.cards = data.cards;
+        if (data.incomeSettings) state.incomeSettings = data.incomeSettings;
+        if (data.transactions) state.transactions = data.transactions;
+
+        localStorage.setItem("asset_cards", JSON.stringify(state.cards));
+        localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
+        localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
+
+        renderAll();
+        isRemoteUpdating = false;
+      }
+    });
+
+  } catch (err) {
+    console.error("Realtime Database 接続エラー:", err);
+    if (statusDisplay) statusDisplay.innerHTML = `同期状態: <span style="color: var(--accent-expense);">🔴 接続エラー: ${err.message}</span>`;
+  }
+}
+
+// データの永続化とクラウド即時書き込み
+function saveData() {
+  localStorage.setItem("asset_cards", JSON.stringify(state.cards));
+  localStorage.setItem("asset_income", JSON.stringify(state.incomeSettings));
+  localStorage.setItem("asset_transactions", JSON.stringify(state.transactions));
+
+  // リモート更新中でない場合のみクラウドへ送信
+  if (firebaseInitialized && rtdb && !isRemoteUpdating) {
+    rtdb.ref("asset_pulse_data").set({
+      cards: state.cards,
+      incomeSettings: state.incomeSettings,
+      transactions: state.transactions,
+      updatedAt: Date.now()
+    }).catch(err => console.error("Firebase 保存エラー:", err));
+  }
+
+  renderAll();
+}     if (data.cards) state.cards = data.cards;
         if (data.incomeSettings) state.incomeSettings = data.incomeSettings;
         if (data.transactions) state.transactions = data.transactions;
         
@@ -838,33 +827,27 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 🔥 4. Firebase クラウド同期設定保存フォーム
+  // 🔥 4. Firebase Realtime Database 同期設定フォーム
   const fbForm = document.getElementById("firebase-setting-form");
   if (fbForm) {
     fbForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const syncKey = (document.getElementById("fb-sync-key")?.value || "").trim() || "default-sync-room";
-      const configJson = (document.getElementById("fb-config-json")?.value || "").trim();
+      const rtdbUrl = (document.getElementById("fb-config-json")?.value || "").trim();
       
-      if (!configJson) {
-        alert("Firebase Config (設定コード) を貼り付けてください。");
+      if (!rtdbUrl) {
+        alert("Realtime Database の URL (https://xxxx.firebaseio.com) を貼り付けてください。");
         return;
       }
 
-      // 古いキャッシュ文字列をクリアして新しい値をセット
-      localStorage.removeItem("asset_fb_config");
-      localStorage.setItem("asset_fb_sync_key", syncKey);
-      localStorage.setItem("asset_fb_config", configJson);
-      
-      // 直ちに接続処理を実行
-      initFirebaseSync();
+      localStorage.setItem("asset_fb_rtdb_url", rtdbUrl);
+      initFirebaseRealtimeDatabase();
       saveData();
-      showToast("🔥 Firebase クラウド同期の設定を更新しました！");
+      showToast("🔥 Firebase 全端末リアルタイム同期を設定しました！");
     });
   }
 
   // 初回起動処理
   syncIncomeSchedule();
-  initFirebaseSync();
+  initFirebaseRealtimeDatabase();
   saveData();
 });
