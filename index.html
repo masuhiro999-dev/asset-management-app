@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -205,31 +205,59 @@
             <ul id="card-list" class="master-list">
               <!-- JavaScriptで追加 -->
             </ul>
-          </div>
-
-          <!-- 給与・交通費自動計上設定 -->
+          <!-- 給与・交通費・初期総資産の設定 -->
           <div class="card">
-            <div class="card-header">
-              <h3>💼 収入自動設定 (給与・交通費)</h3>
-            </div>
+            <h3>💼 収入・初期残高設定</h3>
+            <p class="help-text" style="margin-bottom: 1rem;">毎月の給与・交通費支給および初期残高の設定</p>
             
             <form id="salary-setting-form">
               <h4>1. 給与設定</h4>
               <div class="form-group">
-                <label for="salary-amount">毎月の基本給与額 (円)</label>
-                <input type="number" id="salary-amount" class="form-control" placeholder="300000" value="300000">
+                <label for="salary-amount">手取り給与額 (円)</label>
+                <input type="number" id="salary-amount" class="form-control" placeholder="50000" value="50000" required>
               </div>
               <div class="form-group">
-                <label for="salary-day">振込指定日 (1〜31日)</label>
-                <input type="number" id="salary-day" class="form-control" min="1" max="31" value="25">
+                <label for="salary-day">毎月の給与振込日</label>
+                <input type="number" id="salary-day" class="form-control" min="1" max="31" value="25" required>
               </div>
               <div class="form-group">
-                <label>振込日が「土日祝」の場合の�            <!-- 移行用 初期総資産設定 -->
+                <label style="display: block; margin-bottom: 0.4rem;">振込指定日が「土日祝」の場合の扱い</label>
+                <div class="radio-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                  <label class="radio-label" style="display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;">
+                    <input type="radio" name="weekend_adj" value="PREVIOUS_WORKDAY"> 直前の平日に前倒し
+                  </label>
+                  <label class="radio-label" style="display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;">
+                    <input type="radio" name="weekend_adj" value="NEXT_WORKDAY" checked> 直後の平日に繰り下げ (後倒し)
+                  </label>
+                </div>
+              </div>
+
+              <hr class="divider">
+
+              <h4>2. 交通費設定</h4>
+              <div class="form-group">
+                <label for="transport-amount">交通費支給額 (円)</label>
+                <input type="number" id="transport-amount" class="form-control" placeholder="106000" value="106000">
+              </div>
+              <div class="form-group">
+                <label style="display: block; margin-bottom: 0.4rem;">交通費支給月 (複数選択可)</label>
+                <div class="checkbox-grid" id="transport-months-grid" style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+                  <!-- JavaScriptで動的生成 -->
+                </div>
+                <small class="help-text">※支給日は上記「給料振込日（土日祝補正後）」と同日になります</small>
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">設定を保存 & スケジュールに適用</button>
+            </form>
+
+            <hr class="divider">
+
+            <!-- 移行用 初期総資産設定 -->
             <form id="initial-balance-form">
               <h4>3. 移行時 初期総資産設定</h4>
               <div class="form-group">
                 <label for="initial-balance-amount">アプリ開始時点（移行時）の総資産額 (円)</label>
-                <input type="number" id="initial-balance-amount" class="form-control" placeholder="1000000" required>
+                <input type="number" id="initial-balance-amount" class="form-control" placeholder="294771" required>
                 <small class="help-text">※過去の資産からの引き継ぎ用初期残高を設定します</small>
               </div>
               <div class="form-group">
@@ -238,16 +266,6 @@
               </div>
               <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
             </form>
-          </div>
-        </div>
-      </section>   </div>
-              <button type="submit" class="btn btn-secondary btn-block">初期総資産額を更新</button>
-            </form>
-
-            <hr class="divider">
-
-            <!-- 🔥 4. 複数端末 クラウド同期設定 (Firebase) -->
-            
           </div>
         </div>
       </section>
@@ -271,6 +289,6 @@
     </button>
   </nav>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

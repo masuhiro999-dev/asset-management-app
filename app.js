@@ -25,9 +25,9 @@ const DEFAULT_CARD_MASTERS = [
 const DEFAULT_INCOME_SETTINGS = {
   salary_amount: 50000,
   salary_day: 25,
-  weekend_adj: "PREVIOUS_WORKDAY",
-  transport_amount: 0,
-  transport_months: [4, 10]
+  weekend_adj: "NEXT_WORKDAY", // 繰り下げ (直後の平日に後倒し)
+  transport_amount: 106000,
+  transport_months: [3, 6, 9, 12]
 };
 
 const DEFAULT_TRANSACTIONS = [
@@ -522,47 +522,69 @@ function deleteTransaction(id) {
 }
 
 function renderMasterSettings() {
+  // 1. クレジットカード一覧描画
   const cardList = document.getElementById("card-list");
-  if (!cardList) return;
-  cardList.innerHTML = "";
+  if (cardList) {
+    cardList.innerHTML = "";
+    state.cards.forEach(card => {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div>
+          <strong>${card.name}</strong> <small>(${card.company || 'カード'})</small>
+          <div><small class="help-text">毎月 ${card.withdrawal_day} 日引き落とし</small></div>
+        </div>
+        <button class="btn-danger-sm" onclick="deleteCard('${card.id}')">🗑️ 削除</button>
+      `;
+      cardList.appendChild(li);
+    });
+  }
   
-  state.cards.forEach(card => {
-    const li = document.createElement("li");
-    li.innerHTML = `
-      <div>
-        <strong>${card.name}</strong> <small>(${card.company || 'カード'})</small>
-        <div><small class="help-text">毎月 ${card.withdrawal_day} 日引き落とし</small></div>
-      </div>
-      <button class="btn-danger-sm" onclick="deleteCard('${card.id}')">🗑️ 削除</button>
-    `;
-    cardList.appendChild(li);
+  // 2. 収入・給与・交通費設定のフォーム値復元（直近に更新したデータを維持）
+  const inc = state.incomeSettings || DEFAULT_INCOME_SETTINGS;
+  
+  const elSalaryAmount = document.getElementById("salary-amount");
+  const elSalaryDay = document.getElementById("salary-day");
+  const elTransportAmount = document.getElementById("transport-amount");
+  
+  if (elSalaryAmount) elSalaryAmount.value = inc.salary_amount !== undefined ? inc.salary_amount : 50000;
+  if (elSalaryDay) elSalaryDay.value = inc.salary_day !== undefined ? inc.salary_day : 25;
+  if (elTransportAmount) elTransportAmount.value = inc.transport_amount !== undefined ? inc.transport_amount : 106000;
+  
+  // 土日祝ラジオボタンの選択状態復元
+  const radAdj = document.querySelectorAll('input[name="weekend_adj"]');
+  const targetAdj = inc.weekend_adj || "NEXT_WORKDAY";
+  radAdj.forEach(r => {
+    r.checked = (r.value === targetAdj);
   });
   
+  // 交通費支給月のチェックボックス復元
   const monthsGrid = document.getElementById("transport-months-grid");
   if (monthsGrid) {
     monthsGrid.innerHTML = "";
-    const selectedMonths = state.incomeSettings.transport_months || [];
+    const selectedMonths = inc.transport_months || [3, 6, 9, 12];
     
     for (let m = 1; m <= 12; m++) {
       const isChecked = selectedMonths.includes(m) ? "checked" : "";
       const label = document.createElement("label");
       label.className = "checkbox-label";
+      label.style.display = "inline-flex";
+      label.style.alignItems = "center";
+      label.style.gap = "0.3rem";
+      label.style.marginRight = "0.5rem";
+      label.style.marginBottom = "0.5rem";
+      label.style.fontSize = "0.85rem";
       label.innerHTML = `<input type="checkbox" name="transport_month" value="${m}" ${isChecked}> ${m}月`;
       monthsGrid.appendChild(label);
     }
   }
 
+  // 3. 初期総資産設定のフォーム値復元
   const initTx = state.transactions.find(t => t.id === "tx_initial_balance");
   if (initTx) {
     const elAmount = document.getElementById("initial-balance-amount");
     const elDate = document.getElementById("initial-balance-date");
     if (elAmount) elAmount.value = initTx.amount;
     if (elDate) elDate.value = initTx.date;
-  }
-
-  const elRtdbUrl = document.getElementById("fb-config-json");
-  if (elRtdbUrl) {
-    elRtdbUrl.value = FIREBASE_DATABASE_URL || localStorage.getItem("asset_fb_rtdb_url") || "";
   }
 }
 
