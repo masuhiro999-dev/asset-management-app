@@ -287,6 +287,7 @@ function calculateWeeklyDashboard() {
         t.amount < 0 && 
         t.type !== 'SALARY' && 
         t.type !== 'TRANSPORTATION' && 
+        !(t.description && t.description.includes('給料')) &&
         !(t.description && t.description.includes('給与')) &&
         !(t.description && t.description.includes('交通費'))
       )
@@ -504,23 +505,30 @@ function renderRecentTransactions() {
 }
 
 function editWeeklyAssetAmount(sundayDateStr, currentAssetsVal) {
-  const inputVal = prompt(`【${sundayDateStr} (日)】時点の「現在の資産額」を入力してください:`, currentAssetsVal);
+  // 該当日の最新累積資産額をリアルタイム計算
+  const realCurrentTotal = state.transactions
+    .filter(t => t.date <= sundayDateStr)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const inputVal = prompt(`【${sundayDateStr} (日)】時点の「現在の資産額」を入力してください:`, realCurrentTotal);
   if (inputVal !== null && inputVal.trim() !== "") {
     const newAmount = parseFloat(inputVal);
     if (!isNaN(newAmount)) {
-      const diff = newAmount - currentAssetsVal;
+      const diff = newAmount - realCurrentTotal;
       if (diff !== 0) {
         state.transactions.push({
           id: `manual_adj_${sundayDateStr}_${Date.now()}`,
           date: sundayDateStr,
-          type: 'CASH',
+          type: 'ADJUSTMENT',
           amount: diff,
           card_id: null,
-          description: `資産額手動調整 (${sundayDateStr}時点: ¥${newAmount.toLocaleString()})`
+          description: `資産額手動変更 (${sundayDateStr}時点: ¥${newAmount.toLocaleString()})`
         });
         saveData();
         showToast(`✅ ${sundayDateStr.substring(5)}時点の資産額を ¥${newAmount.toLocaleString()} に更新しました！`);
       }
+    } else {
+      alert("有効な数字を入力してください。");
     }
   }
 }
