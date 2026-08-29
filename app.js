@@ -320,6 +320,7 @@ function renderPaymentPanels() {
   
   container.innerHTML = "";
   
+  // 1. 現金・直接入出金 タイル
   const cashItem = document.createElement("div");
   cashItem.className = `payment-panel-item ${selectedPaymentMethod.type === 'CASH' ? 'active' : ''}`;
   cashItem.onclick = () => selectPaymentPanel({ type: 'CASH' });
@@ -329,7 +330,19 @@ function renderPaymentPanels() {
     <div class="payment-panel-sub">当日/指定日 即時反映</div>
   `;
   container.appendChild(cashItem);
+
+  // 2. 資産調整額 タイル
+  const adjItem = document.createElement("div");
+  adjItem.className = `payment-panel-item ${selectedPaymentMethod.type === 'ADJUSTMENT' ? 'active' : ''}`;
+  adjItem.onclick = () => selectPaymentPanel({ type: 'ADJUSTMENT' });
+  adjItem.innerHTML = `
+    <div class="payment-panel-icon">⚖️</div>
+    <div class="payment-panel-title">資産調整額</div>
+    <div class="payment-panel-sub">残高手動補正・合わせ</div>
+  `;
+  container.appendChild(adjItem);
   
+  // 3. クレジットカード各種 タイル
   state.cards.forEach(card => {
     const isSelected = selectedPaymentMethod.type === 'CREDIT_CARD' && selectedPaymentMethod.cardId === card.id;
     const item = document.createElement("div");
@@ -352,10 +365,14 @@ function selectPaymentPanel(method) {
   
   const cashFields = document.getElementById("cash-fields");
   const cardFields = document.getElementById("card-fields");
+  const descInput = document.getElementById("description");
   
-  if (method.type === 'CASH') {
+  if (method.type === 'CASH' || method.type === 'ADJUSTMENT') {
     if (cashFields) cashFields.classList.remove("hidden");
     if (cardFields) cardFields.classList.add("hidden");
+    if (method.type === 'ADJUSTMENT' && descInput && !descInput.value) {
+      descInput.placeholder = "例: 資産残高の差額調整";
+    }
   } else {
     if (cashFields) cashFields.classList.add("hidden");
     if (cardFields) cardFields.classList.remove("hidden");
@@ -456,6 +473,7 @@ function renderRecentTransactions() {
     if (tx.type === "CREDIT_CARD") typeIcon = "💳";
     if (tx.type === "SALARY") typeIcon = "💼";
     if (tx.type === "TRANSPORTATION") typeIcon = "🚌";
+    if (tx.type === "ADJUSTMENT") typeIcon = "⚖️";
 
     let displayDesc = tx.description;
     if (tx.card_id) {
@@ -639,7 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let amount = 0;
       let type = selectedPaymentMethod.type;
       
-      if (type === "CASH") {
+      if (type === "CASH" || type === "ADJUSTMENT") {
         txDate = document.getElementById("cash-date").value;
         amount = sign === '-' ? -Math.abs(rawAmount) : Math.abs(rawAmount);
       } else {
@@ -658,13 +676,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (c) cardName = c.name;
       }
       
+      let defaultDesc = "現金取引";
+      if (type === "ADJUSTMENT") defaultDesc = "資産残高 調整額";
+      if (type === "CREDIT_CARD") defaultDesc = cardName ? `${cardName} 利用` : "クレジットカード利用";
+
       state.transactions.push({
         id: `tx_${Date.now()}`,
         date: txDate,
         type: type,
         amount: amount,
         card_id: cardId,
-        description: description || (cardName ? `${cardName} 利用` : (type === 'CREDIT_CARD' ? "クレジットカード利用" : "現金取引"))
+        description: description || defaultDesc
       });
       
       saveData();
