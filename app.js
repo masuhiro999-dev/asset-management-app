@@ -458,12 +458,12 @@ function renderRecentTransactions() {
   tbody.innerHTML = "";
   
   const today = new Date();
-  const threeMonthsAgo = new Date(today);
-  threeMonthsAgo.setMonth(today.getMonth() - 3);
-  const threeMonthsAgoStr = threeMonthsAgo.toISOString().split('T')[0];
+  const twoWeeksAgo = new Date(today);
+  twoWeeksAgo.setDate(today.getDate() - 14);
+  const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0];
   
   const recentTxs = state.transactions
-    .filter(tx => tx.date >= threeMonthsAgoStr)
+    .filter(tx => tx.date >= twoWeeksAgoStr)
     .sort((a, b) => new Date(a.date) - new Date(b.date));
   
   recentTxs.forEach(tx => {
